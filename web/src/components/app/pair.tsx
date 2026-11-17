@@ -37,19 +37,34 @@ export function PairPanel({ on }: { on: boolean }) {
   const { cls: nudgeCls, nudge } = useNudge()
   const approve = useMutation(api.devices.approvePairing)
 
-  // The fragment only exists in the browser, and hashing is async: both after mount.
+  // The fragment only exists in the browser, and hashing is async: both after mount. A new link
+  // pasted into this same tab only changes the fragment, so start over on hashchange. Clearing
+  // the fragment after success uses replaceState, which fires no hashchange.
   useEffect(() => {
     let alive = true
-    const parsed = parsePairHash(window.location.hash)
-    if (!parsed) {
-      setTarget(null)
-      return
+    let seq = 0
+    function read() {
+      const n = ++seq
+      setDone(false)
+      setRefused(false)
+      setCode('')
+      setNote(null)
+      lastName.current = null
+      const parsed = parsePairHash(window.location.hash)
+      if (!parsed) {
+        setTarget(null)
+        return
+      }
+      setTarget(undefined)
+      secretHash(parsed.secret)
+        .then((h) => alive && n === seq && setTarget({ pairId: parsed.pairId, secretHash: h }))
+        .catch(() => alive && n === seq && setTarget(null))
     }
-    secretHash(parsed.secret)
-      .then((h) => alive && setTarget({ pairId: parsed.pairId, secretHash: h }))
-      .catch(() => alive && setTarget(null))
+    read()
+    window.addEventListener('hashchange', read)
     return () => {
       alive = false
+      window.removeEventListener('hashchange', read)
     }
   }, [])
 

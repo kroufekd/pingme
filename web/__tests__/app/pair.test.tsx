@@ -129,6 +129,19 @@ describe('/pair', () => {
     expect(screen.queryByText('Odkaz už neplatí.')).toBeNull()
     expect(calls('devices:pairing')).toHaveLength(before)
     expect(mutation('devices:approvePairing')).toHaveBeenCalledTimes(1)
+
+    // A link for another Mac pasted into this same tab only changes the fragment: start over.
+    const pairId2 = 'ZyXwVuTsRqPoNmLkJiHgFe'
+    const hash2 = createHash('sha256').update(SECRET.toUpperCase(), 'utf8').digest('hex')
+    h.queries['devices:pairing'] = { status: 'pending', name: 'iMac Viki', expiresAt: Date.now() + 600_000 }
+    await act(async () => {
+      window.location.hash = `${pairId2}.${SECRET.toUpperCase()}`
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(await screen.findByText('iMac Viki')).toBeInTheDocument()
+    expect(screen.queryByText('Připojeno')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Připojit tento Mac' })).toBeInTheDocument()
+    await waitFor(() => expect(calls('devices:pairing').at(-1)).toEqual({ pairId: pairId2, secretHash: hash2 }))
   })
 
   it('already approved by this account (a reload before the Mac claimed) shows done', async () => {
