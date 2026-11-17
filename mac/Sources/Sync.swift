@@ -26,7 +26,7 @@ final class SyncEngine {
     private var typingRef: String?
     private var typingSentAt = Date.distantPast
     var onSynced: (() -> Void)?
-    /// The server no longer knows this Mac (401): drop the token, show "Připojit tento Mac".
+    /// The server no longer knows this Mac (401): drop the token, show "Connect this Mac".
     var onUnauthorized: (() -> Void)?
 
     init(store: TaskStore, api: DeviceAPI) {
@@ -56,7 +56,7 @@ final class SyncEngine {
         if !store.outbox.isEmpty { syncNow() }
     }
 
-    /// The owner is typing a reply: the sender sees "píše" for a few seconds.
+    /// The owner is typing a reply: the sender sees "typing" for a few seconds.
     func typing(_ ref: String) {
         guard paired, Date().timeIntervalSince(typingSentAt) >= 4 else { return }
         typingRef = ref

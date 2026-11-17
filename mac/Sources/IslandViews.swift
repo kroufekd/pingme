@@ -261,7 +261,7 @@ struct IslandView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { if !open { actions.openFromNotch() } }
                 .accessibilityElement()
-                .accessibilityLabel(open ? "" : "Otevřít pingme")
+                .accessibilityLabel(open ? "" : "Open pingme")
                 .accessibilityAddTraits(open ? [] : .isButton)
                 .accessibilityAction(.default) { if !open { actions.openFromNotch() } }
                 .accessibilityHidden(open)
@@ -333,11 +333,11 @@ struct EarsBar: View {
                     HStack(spacing: 6) { Dot(color: Ink.urgency(model.earsUrgency)); Text(Fmt.waitingShort(n)) }
                 }
                 .buttonStyle(EarStyle(strong: true))
-                .accessibilityLabel("\(Fmt.waitingLabel(n)), otevře seznam")
+                .accessibilityLabel("\(Fmt.waitingLabel(n)), opens the list")
                 .transition(reduceMotion ? .identity : earsTransition)
             }
             Spacer(minLength: 0)
-            ear(icon: "plus", label: "Nový úkol") { actions.switchTo(.compose) }
+            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }
                 .transition(reduceMotion ? .identity : earsTransition)
         } else if n > 0 {
             HStack(spacing: 0) {
@@ -346,7 +346,7 @@ struct EarsBar: View {
                 Text("\(n)").font(Geist.font(12, 500)).foregroundStyle(Ink.on2).monospacedDigit()
             }
             .accessibilityElement()
-            .accessibilityLabel("\(Fmt.waitingLabel(n)), nejnaléhavější \(model.earsUrgency.word)")
+            .accessibilityLabel("\(Fmt.waitingLabel(n)), most urgent: \(model.earsUrgency.word)")
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default) { actions.openWaiting() }
             .transition(reduceMotion ? .identity : earsTransition)
@@ -377,15 +377,15 @@ struct EarsBar: View {
         case .compose:
             listEar
             Spacer(minLength: 0)
-            ear(icon: "user", label: "Lidé") { actions.switchTo(.people) }
+            ear(icon: "user", label: "People") { actions.switchTo(.people) }
         case .waiting:
-            ear(icon: "plus", label: "Nový úkol") { actions.switchTo(.compose) }
+            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }
             Spacer(minLength: 0)
-            ear(icon: "user", label: "Lidé") { actions.switchTo(.people) }
+            ear(icon: "user", label: "People") { actions.switchTo(.people) }
         case .people, .pair:
             listEar
             Spacer(minLength: 0)
-            ear(icon: "plus", label: "Nový úkol") { actions.switchTo(.compose) }
+            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }
         case .closed:
             EmptyView()
         }
@@ -400,8 +400,8 @@ struct EarsBar: View {
             }
         }
         .buttonStyle(EarStyle())
-        .accessibilityLabel(n > 0 ? "Čeká, \(Fmt.tasks(n))" : "Čeká")
-        .help("Čeká")
+        .accessibilityLabel(n > 0 ? "Waiting, \(Fmt.tasks(n))" : "Waiting")
+        .help("Waiting")
     }
 
     private func ear(icon: String, label: String, action: @escaping () -> Void) -> some View {
@@ -481,7 +481,7 @@ private struct EarBody: View {
     }
 }
 
-/// The dark pill (`.q`): Odpovědět, 10 min, reply chips, day, time, repeat, Pozvat, Klíč.
+/// The dark pill (`.q`): Reply, 10 min, reply chips, day, time, repeat, Invite, Key.
 struct QStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { QBody(config: configuration) }
 }
@@ -664,14 +664,14 @@ struct TaskCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(width: Self.titleWidth, alignment: .leading)
                             .padding(.top, 6)
-                            .accessibilityLabel("Report agenta: \(report)")
+                            .accessibilityLabel("Agent report: \(report)")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button { actions.done(task.id) } label: { Icon(name: "check", size: 16, color: .black) }
                     .buttonStyle(RoundStyle(size: 32, grow: true))
                     .focused($focus, equals: .done)
-                    .accessibilityLabel("Hotovo")
+                    .accessibilityLabel("Done")
             }
             .padding(.top, 6)
 
@@ -715,42 +715,42 @@ struct TaskCard: View {
 
     static func whoText(_ task: TodoTask) -> String {
         if task.isAgentSession { return "Claude · \(task.fromName)" }
-        if task.forAgent { return "\(task.fromName) pro agenta" }
+        if task.forAgent { return "\(task.fromName) for agent" }
         // A ping an agent sent through someone's Mac: "Michal · agent".
         if task.fromAgent != nil && task.fromUserId != nil { return "\(task.fromName) · agent" }
         return task.fromName
     }
 
-    /// "nešifrované" on a legacy plaintext ping, nil otherwise.
+    /// "unencrypted" on a legacy plaintext ping, nil otherwise.
     static func marker(_ task: TodoTask) -> String? { task.plain == true ? Net.plainMarker : nil }
 
     static func whoLabel(_ task: TodoTask) -> String {
         let who = whoText(task) + (marker(task).map { ", \($0)" } ?? "")
-        return task.kind == .agent ? "Od agenta, \(who)" : "Od \(who)"
+        return task.kind == .agent ? "From agent, \(who)" : "From \(who)"
     }
 
-    /// Odpovědět and 10 min, folded away until hover or keyboard focus.
+    /// Reply and 10 min, folded away until hover or keyboard focus.
     private var more: some View {
         HStack(spacing: 6) {
             if task.canReply {
                 Button {
                     actions.wantKeyboard()
                     model.replyOpen = true
-                } label: { QLabel(icon: "reply", text: "Odpovědět") }
+                } label: { QLabel(icon: "reply", text: "Reply") }
                 .buttonStyle(QStyle())
                 .focused($focus, equals: .reply)
-                .accessibilityLabel(task.isAgentSession ? "Odpovědět agentovi" : "Odpovědět")
+                .accessibilityLabel(task.isAgentSession ? "Reply to agent" : "Reply")
             }
             if let session = task.agentSession, !session.isEmpty {
-                Button { actions.open(task.id) } label: { QLabel(icon: "open", text: "Otevřít") }
+                Button { actions.open(task.id) } label: { QLabel(icon: "open", text: "Open") }
                     .buttonStyle(QStyle())
                     .focused($focus, equals: .open)
-                    .accessibilityLabel("Otevřít session v Claude")
+                    .accessibilityLabel("Open session in Claude")
             }
             Button { actions.snooze(task.id) } label: { QLabel(icon: "snooze", text: "\(kSnoozeMinutes) min") }
                 .buttonStyle(QStyle())
                 .focused($focus, equals: .snooze)
-                .accessibilityLabel("Odložit o \(kSnoozeMinutes) minut")
+                .accessibilityLabel("Later, in \(kSnoozeMinutes) minutes")
         }
         .padding(.top, 10)
         .opacity(reveal ? 1 : 0)
@@ -771,7 +771,7 @@ struct TaskCard: View {
         .foregroundStyle(Ink.on2)
         .padding(.top, 10)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Odpověděl jsi: \(model.sentNote)")
+        .accessibilityLabel("You replied: \(model.sentNote)")
     }
 
     /// Three chips and a field. Typing moves the chips aside and brings the arrow.
@@ -783,23 +783,23 @@ struct TaskCard: View {
                         Button(c) { actions.reply(task.id, c) }
                             .buttonStyle(QStyle())
                             .focused($focus, equals: .chip(i))
-                            .accessibilityLabel("Odpovědět: \(c)")
+                            .accessibilityLabel("Reply: \(c)")
                     }
                 }
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel("Rychlá odpověď")
+                .accessibilityLabel("Quick reply")
                 .transition(.opacity)
             }
             HStack(spacing: 8) {
-                BareField(placeholder: task.isAgentSession ? "Napiš agentovi" : "Nebo napiš", text: $model.replyText, font: Geist.font(13), color: Ink.on,
+                BareField(placeholder: task.isAgentSession ? "Write to the agent" : "Or type a reply", text: $model.replyText, font: Geist.font(13), color: Ink.on,
                           limit: kReplyMax, focus: $fieldFocused, stillFocused: model.stillFocus == "reply", onSubmit: sendText)
                     .onAppear { fieldFocused = true }
-                    .accessibilityLabel("Vlastní odpověď")
+                    .accessibilityLabel("Custom reply")
                 if !model.replyText.isEmpty {
                     Button(action: sendText) { Icon(name: "send", size: 14, color: .black) }
                         .buttonStyle(RoundStyle(size: 24))
                         .focused($focus, equals: .send)
-                        .accessibilityLabel("Odeslat odpověď")
+                        .accessibilityLabel("Send reply")
                         .transition(.opacity)
                 }
             }
@@ -835,13 +835,13 @@ struct ComposeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BareField(placeholder: "Co je potřeba?", text: $model.newTitle, font: Geist.font(15, 600),
+            BareField(placeholder: "Note to self...", text: $model.newTitle, font: Geist.font(15, 600),
                       placeholderFont: Geist.font(15, 500), limit: kTitleMax,
                       focus: $titleFocused, stillFocused: model.stillFocus == "title", onSubmit: actions.add)
                 .kerning(-0.15)
                 .frame(height: 32)
                 .padding(.top, 4)
-                .accessibilityLabel("Úkol")
+                .accessibilityLabel("Note to self")
             if typing {
                 HStack(spacing: 6) {
                     UrgencyWords(selection: $model.newUrgency)
@@ -852,13 +852,13 @@ struct ComposeCard: View {
                         model.later.toggle()
                     } label: { Icon(name: "clock", size: 15, color: .white) }
                     .buttonStyle(RoundStyle(size: 28, kind: .quiet(expanded: model.later)))
-                    .accessibilityLabel("Později")
-                    .accessibilityValue(model.later ? "rozbaleno" : "sbaleno")
-                    .help("Později")
+                    .accessibilityLabel("Later")
+                    .accessibilityValue(model.later ? "expanded" : "collapsed")
+                    .help("Later")
                     Button(action: actions.add) { Icon(name: "send", size: 14, color: .black) }
                         .buttonStyle(RoundStyle(size: 28))
-                        .accessibilityLabel("Přidat úkol")
-                        .help("Přidat úkol")
+                        .accessibilityLabel("Add task")
+                        .help("Add task")
                 }
                 .padding(.top, 6)
                 .transition(.opacity)
@@ -882,7 +882,7 @@ struct ComposeCard: View {
     }
 }
 
-/// Počká, Brzy, Hned as three words. The chosen one gets its color and a dot.
+/// Can wait, Soon, Now as three words. The chosen one gets its color and a dot.
 struct UrgencyWords: View {
     @Binding var selection: Urgency
 
@@ -896,7 +896,7 @@ struct UrgencyWords: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Jak moc to spěchá")
+        .accessibilityLabel("How urgent")
     }
 }
 
@@ -933,7 +933,7 @@ private struct WordBody: View {
 struct LaterRow: View {
     @ObservedObject var model: IslandModel
 
-    private static let repeatOptions: [(String, String)] = [("", "Jednou")] + Recurrence.all.map { ($0, Recurrence.label($0) ?? $0) }
+    private static let repeatOptions: [(String, String)] = [("", "Once")] + Recurrence.all.map { ($0, Recurrence.label($0) ?? $0) }
 
     var body: some View {
         let cal = Calendar.current
@@ -942,18 +942,18 @@ struct LaterRow: View {
         let hm = cal.dateComponents([.hour, .minute], from: model.laterDate)
         let slot = (hm.hour ?? 0) * 4 + (hm.minute ?? 0) / 15
         HStack(spacing: 6) {
-            MenuPill(text: Fmt.dayLabel(model.laterDate, now: model.now), a11y: "Den",
+            MenuPill(text: Fmt.dayLabel(model.laterDate, now: model.now), a11y: "Day",
                      items: days.map { (Fmt.dayLabel($0, now: model.now), cal.isDate($0, inSameDayAs: model.laterDate)) }) { i in
                 guard days.indices.contains(i) else { return }
                 let d = cal.date(bySettingHour: hm.hour ?? 9, minute: hm.minute ?? 0, second: 0, of: days[i]) ?? days[i]
                 model.laterDate = d
             }
-            MenuPill(text: Fmt.clock(model.laterDate), a11y: "Čas",
-                     items: (0..<96).map { (String(format: "%d:%02d", $0 / 4, ($0 % 4) * 15), $0 == slot) }) { i in
+            MenuPill(text: Fmt.clock(model.laterDate), a11y: "Time",
+                     items: (0..<96).map { (String(format: "%02d:%02d", $0 / 4, ($0 % 4) * 15), $0 == slot) }) { i in
                 let d = cal.date(bySettingHour: i / 4, minute: (i % 4) * 15, second: 0, of: model.laterDate) ?? model.laterDate
                 model.laterDate = d
             }
-            MenuPill(text: Self.repeatOptions.first { $0.0 == model.laterRepeat }?.1 ?? "Jednou", icon: "repeat", a11y: "Opakování",
+            MenuPill(text: Self.repeatOptions.first { $0.0 == model.laterRepeat }?.1 ?? "Once", icon: "repeat", a11y: "Repeat",
                      items: Self.repeatOptions.map { ($0.1, $0.0 == model.laterRepeat) }) { i in
                 if Self.repeatOptions.indices.contains(i) { model.laterRepeat = Self.repeatOptions[i].0 }
             }
@@ -1077,7 +1077,7 @@ struct WaitingCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if model.waitingRows.isEmpty {
-                QuietLine(text: "Nic nečeká.")
+                QuietLine(text: "Nothing waiting.")
             } else {
                 ForEach(model.waitingRows.prefix(Self.maxRows), id: \.id) { t in
                     ListRow(id: t.id, model: model, focused: $focused, focusable: true) { lit in
@@ -1087,7 +1087,7 @@ struct WaitingCard: View {
                     .accessibilityLabel(WaitingRowContent.label(t, now: model.now))
                 }
                 if model.waitingRows.count > Self.maxRows {
-                    Text("a ještě \(Fmt.tasks(model.waitingRows.count - Self.maxRows))")
+                    Text("and \(model.waitingRows.count - Self.maxRows) more")
                         .font(Geist.font(12.5))
                         .foregroundStyle(Ink.on3)
                         .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
@@ -1106,9 +1106,9 @@ private struct WaitingRowContent: View {
     let lit: Bool
 
     static func sub(_ t: TodoTask, now: Date) -> String {
-        var parts = [t.kind == .owner && t.source != "web" ? "ode mě" : t.createdByName]
+        var parts = [t.kind == .owner && t.source != "web" ? "from me" : t.createdByName]
         if let m = TaskCard.marker(t) { parts.append(m) }
-        if t.isSnoozed(at: now) { parts.append("odloženo") }
+        if t.isSnoozed(at: now) { parts.append("snoozed") }
         if let r = t.repeat.flatMap(Recurrence.label) { parts.append(r.prefix(1).lowercased() + r.dropFirst()) }
         return parts.joined(separator: ", ")
     }
@@ -1166,7 +1166,7 @@ struct PeopleCard: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(ContactRowContent.label(c, now: model.now))
                         .accessibilityAddTraits(.isButton)
-                        .accessibilityHint("Otisk klíče")
+                        .accessibilityHint("Key fingerprint")
                         .accessibilityAction(.default) { actions.toggleContact(c.id) }
                         if model.openContact == c.id {
                             KeyDetail(contact: c, mine: model.myKey, onRemove: { actions.removeContact(c.id) })
@@ -1201,15 +1201,15 @@ struct PeopleCard: View {
 
     private var addRow: some View {
         HStack(spacing: 6) {
-            BareField(placeholder: "Přidat jméno", text: $model.personName, font: Geist.font(13, 500), limit: kNameMax,
+            BareField(placeholder: "Add a name", text: $model.personName, font: Geist.font(13, 500), limit: kNameMax,
                       focus: $nameFocused, stillFocused: model.stillFocus == "name",
                       onSubmit: { if named && !model.busy { actions.invite() } })
-                .accessibilityLabel("Jméno")
+                .accessibilityLabel("Name")
             if named {
-                Button(action: actions.invite) { QLabel(icon: "link", text: "Pozvat") }
+                Button(action: actions.invite) { QLabel(icon: "link", text: "Invite") }
                     .buttonStyle(QStyle())
                     .disabled(model.busy)
-                    .accessibilityLabel("Pozvat, zkopíruje odkaz")
+                    .accessibilityLabel("Invite, copies a link")
                     .transition(.opacity)
             }
         }
@@ -1229,9 +1229,9 @@ struct PeopleCard: View {
 
     private var emptyText: String {
         switch model.peopleLoad {
-        case .idle, .loading: return "Načítám..."
+        case .idle, .loading: return "Loading..."
         case .failed(let m): return m
-        case .loaded: return "Zatím nikdo. Napiš jméno a pozvi ho."
+        case .loaded: return "No one yet. Type a name and invite them."
         }
     }
 }
@@ -1262,7 +1262,7 @@ private struct ContactRowContent: View {
     let open: Bool
 
     static func detail(_ c: ContactRow, now: Date) -> String {
-        if !c.hasMac { return "nemá appku" }
+        if !c.hasMac { return "no app" }
         if c.online(at: now) { return "online" }
         return c.lastSeen.map { Fmt.ago($0, now: now) } ?? "offline"
     }
@@ -1300,23 +1300,23 @@ private struct KeyDetail: View {
         VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 4) {
                 if contact.keys.isEmpty {
-                    line("", "Žádné zařízení")
+                    line("", "No devices")
                 }
                 ForEach(Array(contact.keys.prefix(4).enumerated()), id: \.offset) { _, k in
                     line(k.kind, k.fingerprint)
                 }
-                if let mine { line("Tento Mac", mine) }
+                if let mine { line("This Mac", mine) }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Otisky klíčů")
+            .accessibilityLabel("Key fingerprints")
             Button {
                 if armed { onRemove() } else { armed = true }
             } label: {
-                QLabel(icon: "x", text: armed ? "Opravdu odebrat" : "Odebrat z kontaktů")
+                QLabel(icon: "x", text: armed ? "Really remove" : "Remove from contacts")
             }
             .buttonStyle(QStyle())
             .padding(.top, 4)
-            .accessibilityLabel(armed ? "Potvrdit: odebrat \(contact.name) z kontaktů" : "Odebrat \(contact.name) z kontaktů")
+            .accessibilityLabel(armed ? "Confirm: remove \(contact.name) from contacts" : "Remove \(contact.name) from contacts")
         }
         .padding(.leading, 24)
         .padding(.top, 2)
@@ -1346,7 +1346,7 @@ private struct InviteRowContent: View {
 
     private var detail: String {
         if let email = invite.email, !email.isEmpty { return email }
-        return invite.expiresAt.map { "do \(Fmt.day(Date(ms: $0)))" } ?? "pozvánka"
+        return invite.expiresAt.map { "until \(Fmt.day(Date(ms: $0)))" } ?? "invite"
     }
 
     var body: some View {
@@ -1364,13 +1364,13 @@ private struct InviteRowContent: View {
                 .truncationMode(.middle)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(invite.name), pozvánka, \(detail)")
+        .accessibilityLabel("\(invite.name), invite, \(detail)")
         Spacer(minLength: 0)
         Button(action: onRemove) { Icon(name: "x", size: 12, color: .white) }
             .buttonStyle(RemoveStyle(visible: show))
             .focused($focused, equals: invite.id)
-            .accessibilityLabel("Zrušit pozvánku pro \(invite.name)")
-            .help("Zrušit pozvánku")
+            .accessibilityLabel("Cancel invite for \(invite.name)")
+            .help("Cancel invite")
             .padding(.trailing, -5)
     }
 }
@@ -1401,7 +1401,7 @@ private struct RemoveBody: View {
 
 // MARK: - Pairing
 
-/// "Připojit tento Mac": one button. Then a quiet wait for the browser, with a way out.
+/// "Connect this Mac": one button. Then a quiet wait for the browser, with a way out.
 struct PairCard: View {
     @ObservedObject var model: IslandModel
     let actions: IslandActions
@@ -1412,9 +1412,9 @@ struct PairCard: View {
             switch model.pair {
             case .idle, .failed:
                 HStack(spacing: 10) {
-                    Button(action: actions.pair) { Text("Připojit tento Mac") }
+                    Button(action: actions.pair) { Text("Connect this Mac") }
                         .buttonStyle(PrimaryStyle())
-                        .accessibilityHint("Otevře prohlížeč, kde Mac potvrdíš")
+                        .accessibilityHint("Opens your browser, where you confirm this Mac")
                     if case .failed(let why) = model.pair {
                         Text(why)
                             .font(Geist.font(12))
@@ -1428,7 +1428,7 @@ struct PairCard: View {
                     Waiting()
                     if case .waiting(let code) = model.pair {
                         HStack(spacing: 8) {
-                            Text("Přihlas se, pak opiš")
+                            Text("Sign in, then type")
                                 .font(Geist.font(13, 550))
                                 .foregroundStyle(Ink.on2)
                                 .lineLimit(1)
@@ -1441,9 +1441,9 @@ struct PairCard: View {
                                 .textSelection(.enabled)
                         }
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Nejdřív se přihlas v prohlížeči, pak opiš kód: \(code.map(String.init).joined(separator: " "))")
+                        .accessibilityLabel("Sign in in your browser first, then type the code: \(code.map(String.init).joined(separator: " "))")
                     } else {
-                        Text("Otevírám prohlížeč")
+                        Text("Opening your browser")
                             .font(Geist.font(13, 550))
                             .foregroundStyle(Ink.on)
                     }
@@ -1451,19 +1451,19 @@ struct PairCard: View {
                     if case .waiting = model.pair {
                         Button(action: actions.pair) { Icon(name: "open", size: 12, color: .white) }
                             .buttonStyle(RoundStyle(size: 28, kind: .quiet(expanded: false)))
-                            .help("Otevřít stránku znovu")
-                            .accessibilityLabel("Otevřít stránku znovu")
+                            .help("Open the page again")
+                            .accessibilityLabel("Open the page again")
                     }
                     Button(action: actions.cancelPair) { Icon(name: "x", size: 12, color: .white) }
                         .buttonStyle(RoundStyle(size: 28, kind: .quiet(expanded: false)))
-                        .accessibilityLabel("Zrušit připojení")
-                        .help("Zrušit")
+                        .accessibilityLabel("Cancel connecting")
+                        .help("Cancel")
                 }
                 .frame(height: 32)
             case .done(let name):
                 HStack(spacing: 10) {
                     Dot(color: Ink.urgency(.green))
-                    Text(name.isEmpty ? "Připojeno" : "Připojeno, \(name)")
+                    Text(name.isEmpty ? "Connected" : "Connected, \(name)")
                         .font(Geist.font(13, 550))
                         .foregroundStyle(Ink.on)
                 }

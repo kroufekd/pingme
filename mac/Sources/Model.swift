@@ -8,7 +8,7 @@ let kKeepDone: Double = 24 * 60 * 60 * 1000
 let kTitleMax = 200
 let kReplyMax = 200
 let kNameMax = 60
-let kReplyChips = ["Jdu na to", "Za chvíli", "Teď nemůžu"]
+let kReplyChips = ["On it", "In a minute", "Can't now"]
 
 // MARK: - Config
 
@@ -48,9 +48,9 @@ enum Urgency: String, Codable, CaseIterable, Comparable {
 
     var word: String {
         switch self {
-        case .green: return "Počká"
-        case .orange: return "Brzy"
-        case .red: return "Hned"
+        case .green: return "Can wait"
+        case .orange: return "Soon"
+        case .red: return "Now"
         }
     }
 
@@ -125,9 +125,9 @@ struct TodoTask: Codable, Identifiable, Equatable {
         case .owner:
             switch source {
             case "web": return createdByName
-            case "followup": return "Další krok"
+            case "followup": return "Next step"
             case "agent": return createdByName
-            default: return "Připomínka"
+            default: return "Reminder"
             }
         }
     }
@@ -179,11 +179,11 @@ enum Recurrence {
     /// Same words as the web form.
     static func label(_ rule: String) -> String? {
         switch rule {
-        case "daily": return "Každý den"
-        case "weekdays": return "Pracovní dny"
-        case "weekly": return "Každý týden"
-        case "biweekly": return "Po 14 dnech"
-        case "monthly": return "Každý měsíc"
+        case "daily": return "Every day"
+        case "weekdays": return "Weekdays"
+        case "weekly": return "Every week"
+        case "biweekly": return "Every 2 weeks"
+        case "monthly": return "Every month"
         default: return nil
         }
     }

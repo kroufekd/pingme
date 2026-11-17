@@ -121,7 +121,7 @@ final class Pairing {
                 guard let token = try? Net.openPairToken(c.sealedToken, privateKey: pair.privateKey, pairId: pairId,
                                                          userId: c.userId) else {
                     self.url = nil
-                    state = .failed("Nepovedlo se, zkus to znovu.")
+                    state = .failed("Didn't work, try again.")
                     return
                 }
                 var id = identity
@@ -147,7 +147,7 @@ final class Pairing {
             case .success(.gone):
                 // Expired, already claimed or unknown: it never comes back.
                 self.url = nil
-                state = .failed("Vypršelo, zkus to znovu.")
+                state = .failed("Expired, try again.")
                 return
             case .failure:
                 // Offline or a server hiccup: keep asking until the request expires.
@@ -156,7 +156,7 @@ final class Pairing {
         }
         if !Task.isCancelled {
             self.url = nil
-            state = .failed("Vypršelo, zkus to znovu.")
+            state = .failed("Expired, try again.")
         }
     }
 

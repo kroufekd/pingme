@@ -258,13 +258,13 @@ enum ApiError: Error, Equatable {
 
     var code: String? { if case .server(_, let c) = self { return c } else { return nil } }
 
-    /// Czech, for the island.
+    /// English, for the island.
     var message: String {
         switch self {
-        case .offline: return "Bez internetu, zkus to znovu."
-        case .unauthorized: return "Mac už není připojený."
-        case .server(429, _): return "Moc pokusů, zkus to za chvíli."
-        case .server(let s, _): return "Server vrátil chybu \(s)."
+        case .offline: return "No internet, try again."
+        case .unauthorized: return "This Mac is no longer connected."
+        case .server(429, _): return "Too many tries, wait a moment."
+        case .server(let s, _): return "The server returned error \(s)."
         }
     }
 }

@@ -38,20 +38,20 @@ enum SnapshotState: String, CaseIterable {
 
     var menuLeft: [String] {
         switch self {
-        case .idle, .idleHover, .idleWaiting: return ["Safari", "Soubor"]
+        case .idle, .idleHover, .idleWaiting: return ["Safari", "File"]
         default: return ["Safari"]
         }
     }
 
     var menuRight: [String] {
         switch self {
-        case .idle, .idleHover, .idleWaiting, .idleWaitingHover: return ["Po 16. 11.", "14:04"]
+        case .idle, .idleHover, .idleWaiting, .idleWaitingHover: return ["Mon 16 Nov", "14:04"]
         default: return ["14:04"]
         }
     }
 }
 
-/// Monday 16. 11. 2026, 14:04, like the design's menu bar.
+/// Monday 16 Nov 2026, 14:04, like the design's menu bar.
 private let snapshotNow: Date = {
     var c = DateComponents()
     c.year = 2026; c.month = 11; c.day = 16; c.hour = 14; c.minute = 4
@@ -78,7 +78,7 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         let d = cal.date(byAdding: .day, value: days, to: now) ?? now
         return cal.date(bySettingHour: h, minute: m, second: 0, of: d) ?? d
     }
-    let viki = sample("Vyndej prádlo z pračky", from: "Viki", kind: .person, urgency: .red, showAt: now.addingTimeInterval(-130))
+    let viki = sample("Take the laundry out of the washer", from: "Viki", kind: .person, urgency: .red, showAt: now.addingTimeInterval(-130))
     model.waitingCount = 4
     switch state {
     case .idle, .idleHover, .idleWaiting, .idleWaitingHover:
@@ -88,27 +88,27 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.earsUrgency = .orange
         model.peek = [.idleHover, .idleWaitingHover].contains(state)
     case .agentDone, .agentReply:
-        var t = sample("PR #482 je hotový a preview se builduje. Přihlas se v panelu přes Google, pak projedu QA.", from: "macaly",
+        var t = sample("PR #482 is done and the preview is building. Sign in on the panel with Google, then I'll run QA.", from: "macaly",
                        kind: .owner, urgency: .green, showAt: now)
         t.source = "agent"
-        t.createdByName = "macaly pricing · čeká na deploy a QA na preview"
+        t.createdByName = "macaly pricing · waiting on deploy"
         t.agentSession = "7b9a3941-d23d-4ec7-8725-69c0fd75f5a2"
         model.mode = .task
         model.shown = .task
         model.hover = true
         if state == .agentReply {
             model.replyOpen = true
-            model.replyText = "Super, pusť i Mac appku"
+            model.replyText = "Great, run the Mac app too"
             model.stillFocus = "reply"
         }
         model.current = t
     case .agentTriage:
-        var t = sample("Odkaz na pozvánku mi hází chybu, můžeš kouknout?", from: "Viki", kind: .person,
+        var t = sample("The invite link gives me an error, can you take a look?", from: "Viki", kind: .person,
                        urgency: .orange, showAt: now)
         t.to = "agent"
         t.triage = "done"
         t.agentSession = "0a5b9c11-093d-43e7-8a6a-569fe6cc8ba8"
-        t.report = "Viki nejde otevřít pozvánka, text chyby neposlala.\nNejspíš v2/convex/inviteLinks.ts, check a start vrací bad-link.\nOdhad práce: malé.\nDoporučení: zeptat se Viki na přesný text chyby."
+        t.report = "What: Viki can't open an invite, she didn't send the error text.\nWhere: probably v2/convex/inviteLinks.ts, check and start return bad-link.\nEffort: small.\nAdvice: ask Viki for the exact error text."
         model.mode = .task
         model.shown = .task
         model.hover = true
@@ -117,10 +117,10 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
          .taskUnreadable, .taskPlain:
         var t: TodoTask
         switch state {
-        case .taskGreen: t = sample("Až budeš mít chvilku, zavolej", from: "Máma", kind: .person, urgency: .green, showAt: now)
-        case .taskOrange: t = sample("Pošli mi fotky z hor", from: "Franta", kind: .person, urgency: .orange, showAt: now)
+        case .taskGreen: t = sample("Call me when you have a minute", from: "Mom", kind: .person, urgency: .green, showAt: now)
+        case .taskOrange: t = sample("Send me the photos from the mountains", from: "Franta", kind: .person, urgency: .orange, showAt: now)
         case .taskAgent:
-            t = sample("PR s pozvánkami je hotový, mrkni na preview", from: "Michal", kind: .agent,
+            t = sample("The invites PR is done, take a look at the preview", from: "Michal", kind: .agent,
                        urgency: .green, showAt: now.addingTimeInterval(-70))
             t.fromAgent = "Claude Code"
             t.fromUserId = "u-michal"
@@ -129,11 +129,11 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             t.unreadable = true
         case .taskPlain:
             // Legacy remote MCP, with a long name: the marker must stay visible.
-            t = sample("Mrkni na build, padá na testech", from: "Claude Code - macaly-web, větev s pozvánkami",
+            t = sample("Check the build, tests are failing", from: "Claude Code - macaly-web, invites branch",
                        kind: .agent, urgency: .orange, showAt: now)
             t.fromAgent = "mcp"
             t.plain = true
-        case .taskOwnerHover: t = sample("Zalít kytky", from: "", kind: .owner, urgency: .orange, showAt: now, repeat: "weekly")
+        case .taskOwnerHover: t = sample("Water the plants", from: "", kind: .owner, urgency: .orange, showAt: now, repeat: "weekly")
         default: t = viki
         }
         model.mode = .task
@@ -141,19 +141,19 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.hover = state == .taskHover || state == .taskOwnerHover
         if state == .replyOpen || state == .replyTyping { model.replyOpen = true }
         if state == .replyTyping {
-            model.replyText = "Za 5 minut, dopisuju mail"
+            model.replyText = "Back in 5 minutes, finishing an email"
             model.stillFocus = "reply"
         }
         if state == .replySent {
-            t.reply = "Za 5 minut, dopisuju mail"
+            t.reply = "Back in 5 minutes, finishing an email"
             t.touchedAt = now.ms
-            model.sentNote = "Za 5 minut, dopisuju mail"
+            model.sentNote = "Back in 5 minutes, finishing an email"
         }
         model.current = t
     case .newEmpty, .new, .newLater:
         model.mode = .compose
         model.shown = .compose
-        model.newTitle = state == .newEmpty ? "" : "Zavolat instalatérovi"
+        model.newTitle = state == .newEmpty ? "" : "Call the plumber"
         model.newUrgency = state == .newLater ? .orange : .green
         model.later = state == .newLater
         model.laterDate = at(days: 1, 9, 30)
@@ -162,13 +162,13 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
     case .waiting, .waitingHover:
         model.mode = .waiting
         model.shown = .waiting
-        let first = sample("Stav se pro klíče", from: "Viki", kind: .person, urgency: .red,
+        let first = sample("Pick up the keys", from: "Viki", kind: .person, urgency: .red,
                            showAt: now.addingTimeInterval(480), snoozedUntil: now.addingTimeInterval(480))
         model.waitingRows = [
             first,
-            sample("Zavolat instalatérovi", from: "", kind: .owner, urgency: .orange, showAt: at(days: 1, 9, 30)),
-            sample("Vrať mi vrtačku", from: "Franta", kind: .person, urgency: .green, showAt: at(days: 2, 18, 0)),
-            sample("Zalít kytky", from: "", kind: .owner, urgency: .green, showAt: at(days: 5, 10, 0), repeat: "weekly"),
+            sample("Call the plumber", from: "", kind: .owner, urgency: .orange, showAt: at(days: 1, 9, 30)),
+            sample("Give me my drill back", from: "Franta", kind: .person, urgency: .green, showAt: at(days: 2, 18, 0)),
+            sample("Water the plants", from: "", kind: .owner, urgency: .green, showAt: at(days: 5, 10, 0), repeat: "weekly"),
         ]
         if state == .waitingHover { model.hoverRow = first.id }
     case .people, .peopleHover, .peopleAdd, .peopleDetail, .peopleInvited, .peopleEmpty:
@@ -196,11 +196,11 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             model.hoverRow = "1"
         }
         if state == .peopleAdd {
-            model.personName = "Máma"
+            model.personName = "Mom"
             model.stillFocus = "name"
         }
         if state == .peopleInvited {
-            model.said = "Odkaz zkopírován, platí 7 dní."
+            model.said = "Link copied, good for 7 days."
             model.saidOK = true
         }
     case .pair, .pairing, .pairFailed, .pairDone:
@@ -208,7 +208,7 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.shown = .pair
         switch state {
         case .pairing: model.pair = .waiting("309365")
-        case .pairFailed: model.pair = .failed("Vypršelo, zkus to znovu.")
+        case .pairFailed: model.pair = .failed("Expired, try again.")
         case .pairDone: model.pair = .done("Michal")
         default: model.pair = .idle
         }

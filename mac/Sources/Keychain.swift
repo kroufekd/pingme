@@ -29,9 +29,9 @@ enum KeychainError: Error, Equatable {
 
     var message: String {
         switch self {
-        case .denied: return "pingme nemá přístup ke klíči v Keychainu."
-        case .failed(let s): return "Keychain vrátil chybu \(s)."
-        case .corrupt: return "Klíč v Keychainu je poškozený."
+        case .denied: return "pingme can't access its key in Keychain."
+        case .failed(let s): return "Keychain returned error \(s)."
+        case .corrupt: return "The key in Keychain is damaged."
         }
     }
 }

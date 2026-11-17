@@ -25,7 +25,7 @@ struct IncomingPing: Equatable {
 }
 
 enum Net {
-    static let unreadableTitle = "Zprávu na tomhle Macu nejde přečíst."
+    static let unreadableTitle = "This Mac can't read this ping."
     /// Same cap as the web: 200 UTF-16 units, so at most 600 bytes of UTF-8 (the server takes 800).
     static let textMax = 200
 
@@ -75,7 +75,7 @@ enum Net {
     static func sendsPlain(_ e: StatusEvent) -> Bool { e.plain == true && e.from == nil }
 
     /// Shown next to the sender of a legacy plaintext ping, so a forged one cannot pass as encrypted.
-    static let plainMarker = "nešifrované"
+    static let plainMarker = "unencrypted"
 
     /// Opens a sealed copy from a sent row (title or reply). Nil when it is not there or does not open.
     static func open(_ box: SealedBox?, kind: Seal.Kind, row: SentRow, key: Seal.PrivateKey) -> String? {

@@ -4,7 +4,7 @@
 # replaces an MCP server named "pingme" that points somewhere else. Safe to run again.
 # Optional, only with --with-session-hook: a Claude Code Stop hook that pings the island when a session
 # finishes, and replies from the island into that session. It changes ~/.claude/settings.json.
-# After it, the island at the top of the screen shows "Připojit tento Mac": the person clicks it and
+# After it, the island at the top of the screen shows "Connect this Mac": the person clicks it and
 # approves this Mac in the browser. An agent never approves anything.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -169,5 +169,5 @@ elif [ "$WITH_HOOK" = 1 ]; then
   echo "Claude Code settings not found (~/.claude/settings.json); Stop hook skipped." >&2
 fi
 
-echo "Next: the pingme island at the top of the screen shows \"Připojit tento Mac\". Ask your human to click it"
+echo "Next: the pingme island at the top of the screen shows \"Connect this Mac\". Ask your human to click it"
 echo "and approve this Mac in the browser. Until then the pingme MCP tools answer that this Mac is not connected."

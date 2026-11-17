@@ -43,9 +43,9 @@ enum Selftest {
 
     /// Plaintexts both sides seal when emitting: plain, Czech diacritics with emoji, a reply, empty.
     static let samples: [(Seal.Kind, String)] = [
-        (.title, "Zavolej mi, až budeš mít chvilku."),
+        (.title, "Call me when you have a minute."),
         (.title, "Příliš žluťoučký kůň úpěl ďábelské ódy 🐴"),
-        (.reply, "Hotovo, díky!"),
+        (.reply, "Done, thanks!"),
         (.reply, ""),
     ]
 

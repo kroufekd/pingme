@@ -1,4 +1,4 @@
-// Colors, type, icons and Czech formatting. Island tokens follow the v2 design (variant D).
+// Colors, type, icons and English formatting. Island tokens follow the v2 design (variant D).
 
 import AppKit
 import SwiftUI
@@ -136,79 +136,68 @@ struct Icon: View {
     }
 }
 
-// MARK: - Czech formatting
+// MARK: - English formatting (en_GB: 24-hour clock, day before month)
 
 enum Fmt {
     static func clock(_ d: Date) -> String {
         let c = Calendar.current.dateComponents([.hour, .minute], from: d)
-        return String(format: "%d:%02d", c.hour ?? 0, c.minute ?? 0)
+        return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
     }
 
-    /// "teď", "před 2 min", "před 3 h", "včera", "před 4 dny"
+    /// "now", "2 min ago", "3 h ago", "yesterday", "4 days ago"
     static func ago(_ d: Date, now: Date = Date()) -> String {
         let s = now.timeIntervalSince(d)
-        if s < 60 { return "teď" }
+        if s < 60 { return "now" }
         let m = Int(s / 60)
-        if m < 60 { return "před \(m) min" }
+        if m < 60 { return "\(m) min ago" }
         let h = m / 60
-        if h < 24 { return "před \(h) h" }
+        if h < 24 { return "\(h) h ago" }
         let days = h / 24
-        return days == 1 ? "včera" : "před \(days) dny"
+        return days == 1 ? "yesterday" : "\(days) days ago"
     }
 
-    private static let shortDays = ["ne", "po", "út", "st", "čt", "pá", "so"]
+    private static let shortDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private static let shortMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    /// "14:12", "zítra 9:30", "út 18:00", "24. 11. 9:30"
+    /// "14:12", "tomorrow 09:30", "Tue 18:00", "24 Nov 09:30"
     static func when(_ d: Date, now: Date = Date()) -> String {
         let cal = Calendar.current
         let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: d)).day ?? 0
         switch days {
         case ...0: return clock(d)
-        case 1: return "zítra \(clock(d))"
+        case 1: return "tomorrow \(clock(d))"
         case 2...6: return "\(shortDays[cal.component(.weekday, from: d) - 1]) \(clock(d))"
-        default:
-            let c = cal.dateComponents([.day, .month], from: d)
-            return "\(c.day ?? 0). \(c.month ?? 0). \(clock(d))"
+        default: return "\(day(d)) \(clock(d))"
         }
     }
 
-    /// "23. 11."
+    /// "23 Nov"
     static func day(_ d: Date) -> String {
         let c = Calendar.current.dateComponents([.day, .month], from: d)
-        return "\(c.day ?? 0). \(c.month ?? 0)."
+        return "\(c.day ?? 1) \(shortMonths[(c.month ?? 1) - 1])"
     }
 
     static func tasks(_ n: Int) -> String {
-        switch n {
-        case 1: return "1 úkol"
-        case 2...4: return "\(n) úkoly"
-        default: return "\(n) úkolů"
-        }
+        n == 1 ? "1 task" : "\(n) tasks"
     }
 
-    /// Short form next to the notch: "1 čeká", "2 čekají", "5 čeká".
-    static func waitingShort(_ n: Int) -> String {
-        (2...4).contains(n) ? "\(n) čekají" : "\(n) čeká"
-    }
+    /// Short form next to the notch: "1 waiting", "5 waiting".
+    static func waitingShort(_ n: Int) -> String { "\(n) waiting" }
 
-    /// "dnes, po 16. 11.", "zítra, út 17. 11.", "st 18. 11."
+    /// "today, Mon 16 Nov", "tomorrow, Tue 17 Nov", "Wed 18 Nov"
     static func dayLabel(_ d: Date, now: Date = Date()) -> String {
         let cal = Calendar.current
         let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: d)).day ?? 0
         let base = "\(shortDays[cal.component(.weekday, from: d) - 1]) \(day(d))"
         switch days {
-        case 0: return "dnes, \(base)"
-        case 1: return "zítra, \(base)"
+        case 0: return "today, \(base)"
+        case 1: return "tomorrow, \(base)"
         default: return base
         }
     }
 
     static func waitingLabel(_ n: Int) -> String {
-        switch n {
-        case 1: return "1 úkol čeká"
-        case 2...4: return "\(n) úkoly čekají"
-        default: return "\(n) úkolů čeká"
-        }
+        n == 1 ? "1 task waiting" : "\(n) tasks waiting"
     }
 }
 

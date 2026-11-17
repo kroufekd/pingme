@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island.open(.pair, user: false) }
         case .failure(let e):
             // Never treat this as "not paired": the key may still work after a restart. The menu says
-            // what is wrong, and "Připojit tento Mac" there starts over only when the owner asks.
+            // what is wrong, and "Connect this Mac" there starts over only when the owner asks.
             store.syncError = e.message
         }
     }
@@ -158,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard state != lastStatus else { return }
         lastStatus = state
         if offline && due == 0 {
-            let image = NSImage(systemSymbolName: "icloud.slash", accessibilityDescription: "pingme bez spojení")
+            let image = NSImage(systemSymbolName: "icloud.slash", accessibilityDescription: "pingme offline")
             image?.isTemplate = true
             button.image = image
         } else {
@@ -167,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         button.imagePosition = .imageLeading
         button.contentTintColor = due > 0 ? NSColor(hex: 0xFF6A13) : nil
         button.title = pending > 0 ? " \(pending)" : ""
-        button.toolTip = due > 0 ? "pingme: něco čeká na odkliknutí (\(due))" : "pingme"
+        button.toolTip = due > 0 ? "pingme: \(due) waiting" : "pingme"
         button.setAccessibilityLabel(pending > 0 ? "pingme, \(Fmt.waitingLabel(pending))" : "pingme")
     }
 
@@ -181,15 +181,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
             menu.addItem(.separator())
         }
-        menu.addItem(item("Otevřít pingme", #selector(openIsland), key: ""))
+        menu.addItem(item("Open pingme", #selector(openIsland), key: ""))
         if sync.paired {
-            menu.addItem(item("Lidé", #selector(openPeople), key: ""))
+            menu.addItem(item("People", #selector(openPeople), key: ""))
         } else {
-            menu.addItem(item("Připojit tento Mac", #selector(openPair), key: ""))
+            menu.addItem(item("Connect this Mac", #selector(openPair), key: ""))
         }
         menu.addItem(.separator())
-        if sync.paired { menu.addItem(item("Odpojit tento Mac", #selector(unpair), key: "")) }
-        menu.addItem(item("Ukončit pingme", #selector(quit), key: "q"))
+        if sync.paired { menu.addItem(item("Disconnect this Mac", #selector(unpair), key: "")) }
+        menu.addItem(item("Quit pingme", #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ selector: Selector, key: String) -> NSMenuItem {
@@ -218,10 +218,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Revokes this Mac on the server and forgets its key. Asked first: it cannot be undone.
     @objc private func unpair() {
         let a = NSAlert()
-        a.messageText = "Odpojit tento Mac?"
-        a.informativeText = "Pingy sem chodit přestanou. Připojit ho jde znovu."
-        a.addButton(withTitle: "Odpojit")
-        a.addButton(withTitle: "Zrušit")
+        a.messageText = "Disconnect this Mac?"
+        a.informativeText = "Pings will stop arriving here. You can connect it again."
+        a.addButton(withTitle: "Disconnect")
+        a.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         guard a.runModal() == .alertFirstButtonReturn else { return }
         Task {
@@ -237,12 +237,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let main = NSMenu()
         let editItem = NSMenuItem()
         main.addItem(editItem)
-        let edit = NSMenu(title: "Úpravy")
-        edit.addItem(withTitle: "Zpět", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Vyjmout", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Kopírovat", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Vložit", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Vybrat vše", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
         NSApp.mainMenu = main
     }

@@ -83,7 +83,7 @@ final class IslandController {
     private var peopleAt = Date.distantPast
     /// Something changed in the store: sync and refresh the menu bar.
     var onChange: (() -> Void)?
-    /// This Mac is connected to an account. Without it the island offers "Připojit tento Mac"
+    /// This Mac is connected to an account. Without it the island offers "Connect this Mac"
     /// in place of people; local tasks and agent sessions work either way.
     var paired = false {
         didSet {
@@ -107,7 +107,7 @@ final class IslandController {
         heightSub = model.$height.removeDuplicates().sink { [weak self] h in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.heightChanged(h) } }
         }
-        // The sender sees "píše" while the owner types a reply.
+        // The sender sees "typing" while the owner types a reply.
         typingSub = model.$replyText.removeDuplicates().sink { [weak self] text in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.typed(text) } }
         }
@@ -174,7 +174,7 @@ final class IslandController {
             changed = true
         }
 
-        // Idle dot: everything Čeká lists plus due tasks that are not on the island.
+        // Idle dot: everything Waiting lists plus due tasks that are not on the island.
         let rest = store.pending.filter { $0.id != onIsland }
         model.earsCount = rest.count
         model.earsUrgency = rest.map(\.level).max() ?? .green
@@ -232,7 +232,7 @@ final class IslandController {
     // MARK: Open and close
 
     /// Click on the notch or the menu bar item: the task when one is due, otherwise a new task
-    /// (or "Připojit tento Mac" while this Mac is not connected).
+    /// (or "Connect this Mac" while this Mac is not connected).
     func openFromUser(_ preferred: IslandMode = .compose) {
         let due = store.due()
         if !due.isEmpty {
@@ -406,7 +406,7 @@ final class IslandController {
                 self.model.sentNote = String(text.prefix(kReplyMax))
                 self.done(id)
             } else {
-                self.model.sentNote = "Session už neběží. Otevři ji."
+                self.model.sentNote = "That session is no longer running. Open it."
                 if let t = self.store.task(id) { self.model.current = t }
             }
         }
@@ -454,7 +454,7 @@ final class IslandController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
             guard let self else { return }
             if self.target == .pair { self.closeTool() }
-            // Only once the island has folded, or "Připojeno" would flash back to the button.
+            // Only once the island has folded, or "Connected" would flash back to the button.
             DispatchQueue.main.asyncAfter(deadline: .now() + kIslandSettle) { [weak self] in self?.pairing.reset() }
         }
     }
@@ -504,12 +504,12 @@ final class IslandController {
             case .success(let link):
                 // Shown once: the server keeps only the hash of the link.
                 copy(link.url)
-                model.said = "Odkaz zkopírován, platí 7 dní."
+                model.said = "Link copied, good for 7 days."
                 model.saidOK = true
                 model.personName = ""
                 loadPeople()
             case .failure(let e):
-                model.said = e.code == "too-many-invites" ? "Moc otevřených pozvánek." : e.message
+                model.said = e.code == "too-many-invites" ? "Too many open invites." : e.message
                 model.saidOK = false
             }
         }
