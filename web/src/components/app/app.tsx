@@ -12,6 +12,7 @@ import { Icon } from './icon'
 import { NewMacNotice, useDeviceList } from './devices'
 import { Onboarding, needsOnboarding } from './onboarding'
 import { PairPanel } from './pair'
+import { ME } from './people-picker'
 import type { Person } from './people-picker'
 import { CodePanel, EmailPanel } from './sign-in'
 import { SentList, SentToggle, hasUnseenReply } from './task-list'
@@ -138,10 +139,15 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   // "Connect your agent" and "Devices" share one row and open one at a time.
   const [drawer, setDrawer] = useState<'agent' | 'devices' | null>(null)
   const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null))
-  const people: Person[] | null = useMemo(
-    () => contactList?.map((c) => ({ userId: c.userId, name: c.name, hasMac: c.hasMac, online: isOnline(c.macLastSeen, now) })) ?? null,
-    [contactList, now],
-  )
+  const meView = contacts?.status === 'member' ? contacts.me : null
+  const people: Person[] | null = useMemo(() => {
+    if (!contactList || !meView) return null
+    const list: Person[] = contactList.map((c) => ({ userId: c.userId, name: c.name, hasMac: c.hasMac, online: isOnline(c.macLastSeen, now) }))
+    // You, last: a ping to yourself (or your agent) lands on your own Mac. Only with a Mac to land on.
+    const macs = meView.devices.filter((d) => d.kind === 'mac')
+    if (macs.length) list.push({ userId: meView.userId, name: ME, self: true, hasMac: true, online: isOnline(Math.max(...macs.map((d) => d.lastSeen)), now) })
+    return list
+  }, [contactList, meView, now])
 
   async function sendCode(address: string) {
     setBusy(true)
@@ -201,6 +207,8 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
     prevShown.current = shown
   }, [shown])
 
+  // Initials on each sent row only when the pings went to more than one person.
+  const showWho = (contactList?.length ?? 0) > 1 || new Set(sent.rows.map((r) => r.toName).filter(Boolean)).size > 1
   const home = view === 'home'
   const listReady = home && shown === 'form' && sent.loaded
   // The intro names who invited them (or their first contact) and waits for that, so no name flashes.
@@ -245,7 +253,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
           <PairPanel on={shown === 'form'} />
         )}
       </div>
-      {listReady && <SentList rows={sent.rows} keyOf={sent.keyOf} onAck={sent.onAck} open={listOpen} showWho={(people?.length ?? 0) > 1} />}
+      {listReady && <SentList rows={sent.rows} keyOf={sent.keyOf} onAck={sent.onAck} open={listOpen} showWho={showWho} />}
       {listReady && (
         <ConnectAgent
           open={drawer === 'agent'}

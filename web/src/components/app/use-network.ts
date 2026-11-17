@@ -243,7 +243,7 @@ export function useSent({
         title: task.title,
         urgency: task.urgency,
         to: task.forAgent ? 'agent' : 'person',
-        toName: v0?.status === 'member' ? v0.contacts.find((c) => c.userId === task.to)?.name : undefined,
+        toName: v0?.status === 'member' ? (task.to === v0.me.userId ? v0.me.name : v0.contacts.find((c) => c.userId === task.to)?.name) : undefined,
         dueAt: planned(task.dueAt, at),
         repeat: task.repeat,
         status: 'queued',

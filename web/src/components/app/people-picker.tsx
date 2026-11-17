@@ -3,7 +3,10 @@ import { initials } from '@/lib/people'
 import { Icon } from './icon'
 
 /** A contact as the form needs it. `online` is derived from macLastSeen on the page's own timer. */
-export type Person = { userId: string; name: string; hasMac: boolean; online: boolean }
+export type Person = { userId: string; name: string; hasMac: boolean; online: boolean; self?: boolean }
+
+/** You, in the list of people: a ping to yourself lands on your own Mac. */
+export const ME = 'Me'
 
 export const NO_APP = 'No app yet'
 
@@ -11,7 +14,7 @@ export const NO_APP = 'No app yet'
 export function Face({ person }: { person: Person }) {
   return (
     <span className={person.hasMac ? 'face' : 'face nomac'} aria-hidden="true">
-      <span>{initials(person.name)}</span>
+      <span>{person.self ? ME : initials(person.name)}</span>
       {person.hasMac && person.online && <i className="on-dot" />}
     </span>
   )

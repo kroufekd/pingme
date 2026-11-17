@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { FormEvent, ReactNode, Ref } from 'react'
-import { pingPlaceholder } from '@/lib/people'
+import { agentPlaceholder, pingPlaceholder } from '@/lib/people'
 import { REPEAT_OPTIONS, URGENCIES, urgencyOf } from '@/lib/tasks'
 import type { Urgency } from '@/lib/tasks'
 import { DAY_MS, MAX_DAYS, dateTime, dayKey, laterDefault, timeKey } from '@/lib/time'
@@ -30,8 +30,9 @@ const AGENT = 'Agent'
 const LATER = 'Send later'
 
 /** Who the form sends to when nobody was picked: the first contact that has the app. */
+/** A contact with the app first, so adding yourself to the list never changes where pings go. */
 function defaultPerson(people: Person[]) {
-  return people.find((p) => p.hasMac) ?? people[0] ?? null
+  return people.find((p) => p.hasMac && !p.self) ?? people.find((p) => p.self) ?? people[0] ?? null
 }
 
 export function TaskForm({
@@ -162,7 +163,7 @@ export function TaskForm({
           id="u-title"
           name="title"
           type="text"
-          placeholder={forAgent ? 'Give the agent a job…' : pingPlaceholder(chosen?.name)}
+          placeholder={forAgent ? agentPlaceholder(chosen?.name, chosen?.self) : pingPlaceholder(chosen?.name, chosen?.self)}
           autoComplete="off"
           enterKeyHint="send"
           maxLength={MAX_TITLE}

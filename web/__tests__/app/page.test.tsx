@@ -313,14 +313,14 @@ describe('sending is end-to-end encrypted', () => {
   })
 
   it('sends to the agent: no "later", forAgent, and the row is marked', async () => {
-    member()
+    member([], [dominik()], contactsView(K.me, [dominik()]))
     h.results['messages:send'] = { ok: true, ref: 'x' }
     render(<App />)
     await screen.findByRole('textbox', { name: 'Ping' })
     expect(screen.getByRole('radio', { name: 'Dominik' })).toBeChecked()
     fireEvent.click(screen.getByRole('radio', { name: 'Agent' }))
     const title = screen.getByRole('textbox', { name: 'Message for the agent' })
-    expect(title).toHaveAttribute('placeholder', 'Give the agent a job…')
+    expect(title).toHaveAttribute('placeholder', "Ping Dominik's agent…")
     expect(screen.queryByRole('button', { name: 'Send later' })).toBeNull()
     await sendTitle('Mrkni na pozvánky', 'Message for the agent')
 
@@ -346,7 +346,8 @@ describe('sending is end-to-end encrypted', () => {
 
 describe('who it goes to', () => {
   it('one contact: the form as before, their name in the placeholder, a dot while online', async () => {
-    member()
+    // Without a Mac of your own there is nobody else to pick: no "Me".
+    member([], [dominik()], contactsView(K.me, [dominik()]))
     const view = render(<App />)
     const title = await screen.findByRole('textbox', { name: 'Ping' })
     expect(title).toHaveAttribute('placeholder', 'Ping Dominik…')
@@ -357,7 +358,8 @@ describe('who it goes to', () => {
   })
 
   it('one contact offline: no dot, sending still works and the row waits', async () => {
-    member([], [contact({ userId: DOMINIK, name: 'Dominik', macLastSeen: Date.now() - 20 * 60_000, online: false }, K.dominikMac)])
+    const off = [contact({ userId: DOMINIK, name: 'Dominik', macLastSeen: Date.now() - 20 * 60_000, online: false }, K.dominikMac)]
+    member([], off, contactsView(K.me, off))
     h.results['messages:send'] = { ok: true, ref: 'x' }
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Ping' })
@@ -370,7 +372,8 @@ describe('who it goes to', () => {
   })
 
   it('a contact without the app: grey, "No app yet", and nothing is sent', async () => {
-    member([], [contact({ userId: DOMINIK, name: 'Dominik' })])
+    const noApp = [contact({ userId: DOMINIK, name: 'Dominik' })]
+    member([], noApp, contactsView(K.me, noApp))
     render(<App />)
     const title = await screen.findByRole('textbox', { name: 'Ping' })
     const person = screen.getByRole('radio', { name: 'Dominik, no app yet' })
@@ -409,6 +412,8 @@ describe('who it goes to', () => {
       ['J', true, false],
       ['MN', false, false],
       ['V', false, true],
+      // You, last: you have a Mac that is online.
+      ['Me', false, true],
     ])
     expect(within(list).getByText('No app yet')).toBeInTheDocument()
 
@@ -433,6 +438,36 @@ describe('who it goes to', () => {
     expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(sentToggle())
     expect(view.container.querySelector('.it-who')).toHaveAttribute('title', 'Viki')
+  })
+
+  it('with a Mac of your own you can ping yourself or your own agent', async () => {
+    member()
+    h.results['messages:send'] = { ok: true, ref: 'x' }
+    render(<App />)
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
+    // Adding yourself never changes the default: still the contact with the app.
+    const picker = screen.getByRole('button', { name: 'To: Dominik' })
+    fireEvent.click(picker)
+    fireEvent.click(within(screen.getByRole('group', { name: 'To' })).getByRole('radio', { name: 'Me' }), { detail: 1 })
+    expect(screen.getByRole('button', { name: 'To: Me' })).toBeInTheDocument()
+    expect(title).toHaveAttribute('placeholder', 'Ping me…')
+    fireEvent.click(screen.getByRole('button', { name: 'Agent' }))
+    expect(screen.getByRole('textbox', { name: 'Message for the agent' })).toHaveAttribute('placeholder', 'Ping my agent…')
+
+    await sendTitle('Projdi testy', 'Message for the agent')
+    await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
+    expect(sends()[0]).toMatchObject({ to: ME, forAgent: true })
+    // Sealed for your own Mac only.
+    expect(sends()[0].envelopes.map((e: { deviceId: string }) => e.deviceId)).toEqual(['mac-me'])
+    expect(await openFor(K.myMac.privateKey, 'title', sends()[0].ref, sends()[0].envelopes[0], ME)).toBe('Projdi testy')
+  })
+
+  it('with no contact on the app, you are the default', async () => {
+    member([], [contact({ userId: 'u-none', name: 'Jana' })])
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Ping' })
+    expect(screen.getByRole('button', { name: 'To: Me' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('the picker closes with Escape and a press outside, and Enter does not send', async () => {

@@ -4,7 +4,7 @@ import { browserName, loadDeviceKey, resetDeviceKey } from './device-key'
 import { ONLINE_MS, isOnline, openRow, sendSealed } from './network'
 import type { SendArgs, SendReply } from './network'
 import { parsePairHash, secretHash } from './pair'
-import { initials, pingPlaceholder } from './people'
+import { agentPlaceholder, initials, pingPlaceholder } from './people'
 import { aadFor, generateKeyPair, open, seal } from './seal'
 import { resetVault, vaultGet, vaultInMemory, vaultSet } from './vault'
 
@@ -20,6 +20,11 @@ describe('names', () => {
     expect(pingPlaceholder('Dominik')).toBe('Ping Dominik…')
     expect(pingPlaceholder('Jiří Novák')).toBe('Ping Jiří…')
     expect(pingPlaceholder(null)).toBe('Ping…')
+    expect(agentPlaceholder('Dominik Kroufek')).toBe("Ping Dominik's agent…")
+    expect(agentPlaceholder(undefined)).toBe('Ping their agent…')
+    // Yourself: the line speaks as you.
+    expect(pingPlaceholder('Franta', true)).toBe('Ping me…')
+    expect(agentPlaceholder('Franta', true)).toBe('Ping my agent…')
   })
 })
 

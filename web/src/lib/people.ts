@@ -9,7 +9,15 @@ export function initials(name: string): string {
 }
 
 /** The input's placeholder for a person: "Ping Dominik…". */
-export function pingPlaceholder(name: string | null | undefined): string {
+export function pingPlaceholder(name: string | null | undefined, self = false): string {
+  if (self) return 'Ping me…'
   const first = name?.trim().split(/\s+/)[0]
   return first ? `Ping ${first}…` : 'Ping…'
+}
+
+/** In agent mode the line says whose agent gets it. */
+export function agentPlaceholder(name: string | null | undefined, self = false): string {
+  if (self) return 'Ping my agent…'
+  const first = name?.trim().split(/\s+/)[0]
+  return first ? `Ping ${first}'s agent…` : "Ping their agent…"
 }
