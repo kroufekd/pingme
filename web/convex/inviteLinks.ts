@@ -1,5 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server"
-import { v } from "convex/values"
+import { v, type Infer } from "convex/values"
 import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import type { MutationCtx, QueryCtx } from "./_generated/server"
@@ -232,11 +232,15 @@ export const create = action({
     v.object({ ok: v.literal(true), inviteId: v.string(), url: v.string(), expiresAt: v.number() }),
     v.object({ ok: v.literal(false), error: createError }),
   ),
-  handler: async (ctx, { name }) => {
+  handler: async (
+    ctx,
+    { name },
+  ): Promise<{ ok: true; inviteId: string; url: string; expiresAt: number } | { ok: false; error: Infer<typeof createError> }> => {
     const userId = await getAuthUserId(ctx)
     if (!userId) return { ok: false as const, error: "not-member" as const }
     const token = randomToken()
-    const r = await ctx.runMutation(internal.inviteLinks.createForUser, { userId, name, linkHash: sha256Hex(token) })
+    // Annotated: an action calling a mutation in its own file needs it, or the types go circular.
+    const r: Infer<typeof created> = await ctx.runMutation(internal.inviteLinks.createForUser, { userId, name, linkHash: sha256Hex(token) })
     if (!r.ok) return r
     return { ok: true as const, inviteId: r.inviteId, url: inviteUrl(token), expiresAt: r.expiresAt }
   },

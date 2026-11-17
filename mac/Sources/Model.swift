@@ -18,9 +18,9 @@ struct AppConfig: Codable {
     var web: String?
     var convex: String?
 
-    static let defaultAPI = "https://proficient-labrador-100.api.macaly.app"
+    static let defaultAPI = "https://amiable-magpie-936.convex.site"
     static let defaultWeb = "https://pingme.macaly.app"
-    static let defaultConvex = "https://proficient-labrador-100.eu-west-1.convex.cloud"
+    static let defaultConvex = "https://amiable-magpie-936.convex.cloud"
 
     private static func pick(_ v: String?, _ fallback: String) -> String { (v?.isEmpty == false ? v : nil) ?? fallback }
     var apiURL: String { Self.pick(api, Self.defaultAPI) }

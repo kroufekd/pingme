@@ -6,8 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 WEB_URL="${1:-${WEB_URL:-https://pingme.macaly.app}}"
-API_URL="${API_URL:-https://proficient-labrador-100.api.macaly.app}"
-CONVEX_URL="${CONVEX_URL:-https://proficient-labrador-100.eu-west-1.convex.cloud}"
+API_URL="${API_URL:-https://amiable-magpie-936.convex.site}"
+CONVEX_URL="${CONVEX_URL:-https://amiable-magpie-936.convex.cloud}"
 APP="build/pingme.app"
 mkdir -p .build
 LOG=.build/pingme-build.log
