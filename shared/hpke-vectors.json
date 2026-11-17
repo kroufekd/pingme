@@ -1,0 +1,120 @@
+{
+  "_comment": "Test-only HPKE vectors for pingme v1 (web/src/lib/seal.ts and mac/Sources/Seal.swift). The key pairs are the public RFC 9180 A.2.1 test keys (ts = skEm/pkEm, swift = skRm/pkRm). Never use them for a real device. fromTs is sealed by TS for keys.swift; fromSwift is sealed by Swift for keys.ts. Regenerate only by hand: PINGME_EMIT_VECTORS=out.json npx vitest run src/lib/seal.test.ts, and Pingme --selftest-crypto --emit out.json.",
+  "suite": {
+    "mode": 0,
+    "kem": "DHKEM(X25519, HKDF-SHA256)",
+    "kdf": "HKDF-SHA256",
+    "aead": "ChaCha20-Poly1305"
+  },
+  "info": "pingme v1",
+  "aad": "pingme v1|<kind>|<ref>|<from>|<to>",
+  "keys": {
+    "ts": {
+      "publicKey": "GvoI097AR6ZDiFFj8RgEdvp921TGqAKeoz+VeWvyrEo=",
+      "privateKey": "9OybM7eSw3LB0sIGNQe2hO+SW4x1pC28v1fWPM04FgA="
+    },
+    "swift": {
+      "publicKey": "QxDul9iMwfCIpVdsd6sM9cOseX89lROcbIS1QpxZZio=",
+      "privateKey": "gFeZHu+PHxrxj0qUkdFqHOMz9pXU24442nWXXER44Ps="
+    }
+  },
+  "rfc9180": {
+    "_comment": "RFC 9180 A.2.1 base mode, sequence number 0, hex, copied verbatim.",
+    "skRm": "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb",
+    "pkRm": "4310ee97d88cc1f088a5576c77ab0cf5c3ac797f3d95139c6c84b5429c59662a",
+    "info": "4f6465206f6e2061204772656369616e2055726e",
+    "enc": "1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a",
+    "aad": "436f756e742d30",
+    "pt": "4265617574792069732074727574682c20747275746820626561757479",
+    "ct": "1c5250d8034ec2b784ba2cfd69dbdb8af406cfe3ff938e131f0def8c8b60b4db21993c62ce81883d2dd1b51a28"
+  },
+  "fromTs": [
+    {
+      "kind": "title",
+      "ref": "ACLFk5kXuLiB7snjlAyG_Q",
+      "from": "u_web_test",
+      "to": "u_mac_test",
+      "plaintext": "Zavolej mi, až budeš mít chvilku.",
+      "enc": "lboJYUV9sXYIhwUOrXsIewZYFn/iiRhuFg+8ZL+brjI=",
+      "ct": "GgEcULMkd3/YEhVpuo+HtkO1TpmNQKw1COUnF14/DIgJlymQqWYLEAW1CpYXo4CrGJhwyw=="
+    },
+    {
+      "kind": "title",
+      "ref": "SnAKMfZTthP0vfNljZwclg",
+      "from": "u_web_test",
+      "to": "u_mac_test",
+      "plaintext": "Příliš žluťoučký kůň úpěl ďábelské ódy 🐴",
+      "enc": "qU5hrsgSjhawOVFz8OJda9PcZQnZpPH9anL2DG8TBA4=",
+      "ct": "TNp59XXvbFwmlso0JO0v+8s5xzaHekqdeUOCMW1lOxebWS/VCzvX1cBSiGNUb0fr81A4RW85TFM6YVg4Hp9hK3mwpQx3aBpQJAU="
+    },
+    {
+      "kind": "reply",
+      "ref": "oFsLyRebzz8Y-HZ_So5trA",
+      "from": "u_web_test",
+      "to": "u_mac_test",
+      "plaintext": "Hotovo, díky!",
+      "enc": "T+jtbHOWB4jvJk+pA01gqy3uYzsjkb5x4o6/WTpeWFE=",
+      "ct": "55UFvdLUDiMdb7iDN1rX5m6Vu9mflGkpj4qgv2eU"
+    },
+    {
+      "kind": "reply",
+      "ref": "-j1eMebaDhJUavpZ0Oq6aA",
+      "from": "u_web_test",
+      "to": "u_mac_test",
+      "plaintext": "",
+      "enc": "EKvi3NiFOuxRyG6JSFurYbaeKjJrTE9Rw/VbiI9saWk=",
+      "ct": "P+9iY2A0Me8v8B1N+EjtWQ=="
+    }
+  ],
+  "fromSwift": [
+    {
+      "ct": "R1Rj065ShlSSC2EKqwme2gqrnE5KzDSlMrKlIBq6wEnsDlYOOYdwdXUOgAJG4r5hqKyJRg==",
+      "enc": "nm4jwb5nGLdi5C67kUs8ynbCNUZN0AFYKuRviSTJdSc=",
+      "from": "u_mac_test",
+      "kind": "title",
+      "plaintext": "Zavolej mi, až budeš mít chvilku.",
+      "ref": "VzdqnWq6leZdKTacLHKCog",
+      "to": "u_web_test"
+    },
+    {
+      "ct": "aGkcROyLBWXKxttsLHqi6ZnQScAp/6wZ7isszGNPFfKJQ+KfKZaNdB8haAQvgw2Yg4GIYd+GQZQ+gD3qcyyl+/2xKqYeJDB2xzM=",
+      "enc": "TtZFtEhsKsi69Xr2IAedD4jUI4zAFzn2+f84AgIROQU=",
+      "from": "u_mac_test",
+      "kind": "title",
+      "plaintext": "Příliš žluťoučký kůň úpěl ďábelské ódy 🐴",
+      "ref": "jMGYcqzwkgqOxc_Rs3-0Qw",
+      "to": "u_web_test"
+    },
+    {
+      "ct": "aSd2fHmIKJr6zYVMlrIL+u9mBL3dOpwPRyafDJnD",
+      "enc": "9ZHyAxLOs1zNTMTpNm67PDUyVprn8IhANW7ygyDTz1g=",
+      "from": "u_mac_test",
+      "kind": "reply",
+      "plaintext": "Hotovo, díky!",
+      "ref": "ruDQA87I9OOvhWBTvYe72A",
+      "to": "u_web_test"
+    },
+    {
+      "ct": "BSlxNMQumjhTxwutt18XTA==",
+      "enc": "/isFmacCkIbnxbqaBePswb0IAK3H2zasqVWNRYjvmCQ=",
+      "from": "u_mac_test",
+      "kind": "reply",
+      "plaintext": "",
+      "ref": "AvVPct7dY2TWHwp7fOIBdA",
+      "to": "u_web_test"
+    }
+  ],
+  "pairCode": {
+    "pairId": "AbCdEfGhIjKlMnOpQrStUv",
+    "publicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "code": "309365"
+  },
+  "pairToken": {
+    "info": "pingme pair v1",
+    "pairId": "AbCdEfGhIjKlMnOpQrStUv",
+    "userId": "u_web_test",
+    "token": "tok_pairing_vector_only_for_selftest_000000",
+    "enc": "oD4Zu2krAxbDayYfL7iQOiK7bp4ZBqcz15vgHmaTDVY=",
+    "ct": "ZzaWkvdEbs10FtcJcjMIRzVN2pFuC7maKrT8hTF3jrvYK5FxFPAdGOTVdfxq6nGPOuxRfCYjaF22YQk="
+  }
+}

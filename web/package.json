@@ -16,6 +16,9 @@
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/newsreader": "^5.3.0",
     "@hookform/resolvers": "^5.2.2",
+    "@hpke/chacha20poly1305": "1.8.0",
+    "@hpke/core": "1.9.0",
+    "@hpke/dhkem-x25519": "1.8.0",
     "@macaly/bridge": "^0.1.7",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-devtools": "^0.10.0",
@@ -68,5 +71,8 @@
     "vite": "^8.1.5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.2"
+  },
+  "overrides": {
+    "@hpke/common": "1.10.1"
   }
 }
