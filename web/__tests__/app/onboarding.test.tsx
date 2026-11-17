@@ -48,7 +48,7 @@ function member(onboarded: boolean | undefined, extra: { inviterName?: string; c
 }
 
 /** The intro the app shows now: encrypted, naming who invited them. */
-const APP_LINE = 'Šifrované. Přečte to jen Dominik.'
+const APP_LINE = 'This offers Pretty Good Privacy, for you, me and our agents.'
 /** The component's default (phase 1) line. */
 const LINE = 'Letí rovnou Dominikovi na Mac.'
 const finished = () => mutation('senders:finishOnboarding')
@@ -124,7 +124,7 @@ describe('when the intro shows', () => {
     expect(view.container.querySelector('dialog')).toBeNull()
   })
 
-  it('is encrypted and names who invited them, or the first contact, once contacts are known', async () => {
+  it('is encrypted, and waits until contacts are known', async () => {
     member(false, { inviterName: 'Michal', contacts: null })
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Úkol' })
@@ -133,13 +133,13 @@ describe('when the intro shows', () => {
 
     member(false, { inviterName: 'Michal', contacts: [{ userId: 'u-viki', name: 'Viki' }, { userId: 'u-mi', name: 'Michal' }] })
     view.rerender(<App />)
-    const dialog = await screen.findByRole('dialog', { name: 'Šifrované. Přečte to jen Michal.' })
+    const dialog = await screen.findByRole('dialog', { name: APP_LINE })
     expect(dialog.querySelectorAll('.ob-lock')).toHaveLength(2)
     cleanup()
 
     member(false, { inviterName: '', contacts: [{ userId: 'u-viki', name: 'Viki' }] })
     render(<App />)
-    expect(await screen.findByRole('dialog', { name: 'Šifrované. Přečte to jen Viki.' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: APP_LINE })).toBeInTheDocument()
   })
 
   it('needsOnboarding is strict about the flag', () => {
@@ -233,7 +233,7 @@ describe('copy', () => {
 
   it('encrypted: its own line and a lock on the ping and on the island', () => {
     const view = render(<Onboarding name="Viki" encrypted onDone={() => {}} />)
-    expect(screen.getByRole('dialog', { name: 'Šifrované. Přečte to jen Viki.' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: APP_LINE })).toBeInTheDocument()
     expect(view.container.querySelectorAll('.ob-p.lk .ob-lock')).toHaveLength(1)
     expect(view.container.querySelectorAll('.ob-isl .ob-lock')).toHaveLength(1)
   })

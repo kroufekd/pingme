@@ -24,9 +24,12 @@ export function dative(name: string): string | null {
   return `${n}ovi`
 }
 
+/** The encrypted intro, in English on purpose: a nod to PGP. */
+export const ENCRYPTED_LINE = 'This offers Pretty Good Privacy, for you, me and our agents.'
+
 export function introLine(name: string, encrypted: boolean): string {
+  if (encrypted) return ENCRYPTED_LINE
   const who = name.trim() || DEFAULT_NAME
-  if (encrypted) return `Šifrované. Přečte to jen ${who}.`
   const to = dative(who)
   return to ? `Letí rovnou ${to} na Mac.` : `Letí rovnou na Mac, ${who} to uvidí hned.`
 }
@@ -155,7 +158,7 @@ export function Onboarding({
             </span>
           )}
         </div>
-        <p className="ob-t" id={textId}>
+        <p className="ob-t" id={textId} lang={encrypted ? 'en' : undefined}>
           {introLine(name, encrypted)}
         </p>
         <button ref={okRef} type="button" className="ob-ok" onClick={close}>
