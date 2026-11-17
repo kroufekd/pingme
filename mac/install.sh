@@ -1,11 +1,21 @@
 #!/bin/bash
-# Installs pingme on this Mac: builds it, puts it in ~/Applications, starts it now and at every login,
-# connects the coding agents it finds (Claude Code, Codex, Cursor) to its local MCP server and adds the
-# Claude Code Stop hook. Safe to run again: every step replaces what an earlier run set up.
+# Installs pingme on this Mac: builds it, puts it in ~/Applications, starts it now and at every login and
+# connects the coding agents it finds (Claude Code, Codex, Cursor) to its local MCP server. It never
+# replaces an MCP server named "pingme" that points somewhere else. Safe to run again.
+# Optional, only with --with-session-hook: a Claude Code Stop hook that pings the island when a session
+# finishes, and replies from the island into that session. It changes ~/.claude/settings.json.
 # After it, the island at the top of the screen shows "Připojit tento Mac": the person clicks it and
 # approves this Mac in the browser. An agent never approves anything.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+WITH_HOOK=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-session-hook) WITH_HOOK=1 ;;
+    *) echo "Unknown option: $arg (the only option is --with-session-hook)" >&2; exit 2 ;;
+  esac
+done
 
 if ! xcode-select -p >/dev/null 2>&1 || ! command -v swift >/dev/null 2>&1; then
   echo "pingme needs the Xcode Command Line Tools. Run: xcode-select --install  then run ./mac/install.sh again." >&2
@@ -45,7 +55,8 @@ PL
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 echo "Installed and started: $DEST"
 
-# Local MCP server "pingme" for the coding agents that exist here. Remove first, then add: idempotent.
+# Local MCP server "pingme" for the coding agents that exist here. An existing "pingme" entry is replaced
+# only when it already points at this app; one that points elsewhere belongs to someone else and stays.
 find_tool() {
   local name="$1" p
   p="$(command -v "$name" 2>/dev/null || true)"
@@ -56,7 +67,10 @@ find_tool() {
 }
 
 CLAUDE="$(find_tool claude)"
-if [ -n "$CLAUDE" ]; then
+if [ -n "$CLAUDE" ] && EXISTING="$("$CLAUDE" mcp get pingme 2>/dev/null)" && ! printf '%s' "$EXISTING" | grep -qF "$BIN"; then
+  echo "Claude Code: an MCP server named pingme already exists and points elsewhere; left it alone." >&2
+  echo "  If it is an old pingme setup of yours: claude mcp remove --scope user pingme  then run this again." >&2
+elif [ -n "$CLAUDE" ]; then
   "$CLAUDE" mcp remove --scope user pingme >/dev/null 2>&1 || true
   if "$CLAUDE" mcp add --scope user pingme -- "$BIN" mcp >/dev/null 2>&1; then
     echo "Claude Code: MCP server pingme added."
@@ -66,7 +80,23 @@ if [ -n "$CLAUDE" ]; then
 fi
 
 CODEX="$(find_tool codex)"
-if [ -n "$CODEX" ]; then
+CODEX_CONFIG="${CODEX_HOME:-$HOME/.codex}/config.toml"
+codex_foreign() {
+  # True when config.toml has a pingme server whose command is not this app.
+  [ -f "$CODEX_CONFIG" ] && /usr/bin/python3 -I - "$CODEX_CONFIG" "$BIN" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r'^\[mcp_servers\.(?:pingme|"pingme")\]\s*$(.*?)(?=^\[|\Z)', text, re.M | re.S)
+if not m:
+    sys.exit(1)
+cmd = re.search(r'^\s*command\s*=\s*"([^"]*)"', m.group(1), re.M)
+sys.exit(0 if not cmd or cmd.group(1) != sys.argv[2] else 1)
+PY
+}
+if [ -n "$CODEX" ] && codex_foreign; then
+  echo "Codex: an MCP server named pingme already exists and points elsewhere; left it alone." >&2
+  echo "  If it is an old pingme setup of yours: codex mcp remove pingme  then run this again." >&2
+elif [ -n "$CODEX" ]; then
   "$CODEX" mcp remove pingme >/dev/null 2>&1 || true
   if "$CODEX" mcp add pingme -- "$BIN" mcp >/dev/null 2>&1; then
     echo "Codex: MCP server pingme added."
@@ -91,7 +121,11 @@ if os.path.exists(path):
         sys.exit("not valid JSON")
 if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
     sys.exit("unexpected shape")
-data.setdefault("mcpServers", {})["pingme"] = {"command": binary, "args": ["mcp"]}
+servers = data.setdefault("mcpServers", {})
+old = servers.get("pingme")
+if isinstance(old, dict) and old.get("command") not in (None, binary):
+    sys.exit("a pingme server pointing elsewhere already exists")
+servers["pingme"] = {"command": binary, "args": ["mcp"]}
 tmp = path + ".tmp"
 with open(tmp, "w") as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
@@ -105,11 +139,13 @@ PY
   fi
 fi
 
-# Claude Code Stop hook: pings the island when a session finishes while you are elsewhere.
-mkdir -p "$HOME/.local/bin"
-install -m 755 Resources/pingme-hook.sh "$HOME/.local/bin/pingme-hook"
+# Optional Claude Code Stop hook: pings the island when a session finishes while you are elsewhere. It
+# copies the session's last prompt and answer (shortened) to this Mac's pingme folder, and lets a reply
+# typed on the island reach that session. Only with --with-session-hook.
 SETTINGS="$HOME/.claude/settings.json"
-if [ -f "$SETTINGS" ]; then
+if [ "$WITH_HOOK" = 1 ] && [ -f "$SETTINGS" ]; then
+  mkdir -p "$HOME/.local/bin"
+  install -m 755 Resources/pingme-hook.sh "$HOME/.local/bin/pingme-hook"
   [ -f "$SETTINGS.before-pingme" ] || cp "$SETTINGS" "$SETTINGS.before-pingme"
   /usr/bin/python3 -I - "$SETTINGS" <<'PY'
 import json, os, sys
@@ -129,6 +165,8 @@ with open(tmp, "w") as f:
 os.replace(tmp, p)
 PY
   echo "Claude Code Stop hook installed."
+elif [ "$WITH_HOOK" = 1 ]; then
+  echo "Claude Code settings not found (~/.claude/settings.json); Stop hook skipped." >&2
 fi
 
 echo "Next: the pingme island at the top of the screen shows \"Připojit tento Mac\". Ask your human to click it"

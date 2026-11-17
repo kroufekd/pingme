@@ -26,6 +26,8 @@ cd pingme
 
 The app opens and shows "Připojit tento Mac". Click it, then type the 6-digit code from the Mac in the browser where you are signed in to pingme. Your Mac is then online and can receive pings.
 
+The installer adds the `pingme` MCP server for the agents it finds and changes nothing else. Optional: `./mac/install.sh --with-session-hook` also adds a Claude Code Stop hook that pings the island when a session finishes while you are away, and lets you reply to that session from the island. It edits `~/.claude/settings.json` (a backup goes next to it) and keeps the session's last prompt and answer, shortened, in the app's folder on this Mac.
+
 ## Connect a coding agent
 
 Claude Code, Codex and Cursor work through a local MCP server named `pingme` that the installer registers for the ones it finds. Tools: `contacts`, `ping`, `status`, `reply`. Messages are encrypted locally in the Mac app.
