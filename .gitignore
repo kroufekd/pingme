@@ -1,0 +1,20 @@
+# Secrets and local state: never commit
+.env*
+mac/config/
+.context/
+claude-token
+
+# Build output
+mac/build/
+mac/.build/
+web/node_modules/
+web/.output/
+web/.tanstack/
+web/coverage/
+*.tsbuildinfo
+
+# Macaly sandbox files
+web/.macaly/
+web/.sandbox/
+
+.DS_Store

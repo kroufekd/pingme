@@ -1,0 +1,1099 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --sea-ink: 189 47% 17%;
+  --sea-ink-soft: 188 22% 33%;
+  --lagoon: 177 42% 52%;
+  --lagoon-deep: 185 50% 39%;
+  --palm: 148 39% 30%;
+  --sand: 127 23% 92%;
+  --foam: 137 41% 97%;
+  --surface: 0 0% 100% / 0.74;
+  --surface-strong: 0 0% 100% / 0.9;
+  --line: 189 47% 17% / 0.14;
+  --inset-glint: 0 0% 100% / 0.82;
+  --kicker: 148 39% 30% / 0.9;
+  --bg-base: 145 33% 93%;
+  --header-bg: 94 100% 99% / 0.84;
+  --chip-bg: 0 0% 100% / 0.8;
+  --chip-line: 148 39% 30% / 0.18;
+  --link-bg-hover: 0 0% 100% / 0.9;
+  --hero-a: 177 42% 52% / 0.36;
+  --hero-b: 148 39% 30% / 0.2;
+
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 3.9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96.1%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96.1%;
+  --muted-foreground: 0 0% 45.1%;
+  --accent: 0 0% 96.1%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 89.8%;
+  --input: 0 0% 89.8%;
+  --ring: 0 0% 3.9%;
+  --chart-1: 12 76% 61%;
+  --chart-2: 173 58% 39%;
+  --chart-3: 197 37% 24%;
+  --chart-4: 43 74% 66%;
+  --chart-5: 27 87% 67%;
+  --radius: 0.625rem;
+  --sidebar: 0 0% 98%;
+  --sidebar-foreground: 0 0% 3.9%;
+  --sidebar-primary: 0 0% 9%;
+  --sidebar-primary-foreground: 0 0% 98%;
+  --sidebar-accent: 0 0% 96.1%;
+  --sidebar-accent-foreground: 0 0% 9%;
+  --sidebar-border: 0 0% 89.8%;
+  --sidebar-ring: 0 0% 3.9%;
+}
+
+.dark {
+  --sea-ink: 169 36% 88%;
+  --sea-ink-soft: 170 23% 75%;
+  --lagoon: 176 60% 61%;
+  --lagoon-deep: 173 63% 73%;
+  --palm: 149 45% 61%;
+  --sand: 196 33% 9%;
+  --foam: 197 36% 10%;
+  --surface: 197 36% 10% / 0.8;
+  --surface-strong: 195 35% 9% / 0.92;
+  --line: 173 63% 73% / 0.18;
+  --inset-glint: 170 77% 86% / 0.14;
+  --kicker: 169 63% 83%;
+  --bg-base: 197 41% 7%;
+  --header-bg: 197 41% 7% / 0.8;
+  --chip-bg: 193 42% 9% / 0.9;
+  --chip-line: 173 63% 73% / 0.24;
+  --link-bg-hover: 192 34% 14% / 0.8;
+  --hero-a: 176 60% 61% / 0.18;
+  --hero-b: 149 45% 61% / 0.12;
+
+  --background: 0 0% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 14.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --accent: 0 0% 14.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 14.9%;
+  --input: 0 0% 14.9%;
+  --ring: 0 0% 83.1%;
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+  --sidebar: 0 0% 9%;
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-primary: 220 70% 50%;
+  --sidebar-primary-foreground: 0 0% 98%;
+  --sidebar-accent: 0 0% 14.9%;
+  --sidebar-accent-foreground: 0 0% 98%;
+  --sidebar-border: 0 0% 14.9%;
+  --sidebar-ring: 0 0% 83.1%;
+}
+
+@theme inline {
+  --font-sans: 'Newsreader Variable', ui-serif, Georgia, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+}
+
+
+/* pingme v4 "List papiru": one flat cream page, one input, a row of small quiet controls. */
+:root {
+  --cream: #f3ebd9;
+  --ink: #1b1914;
+  /* Quiet text, 5.3:1 on cream. */
+  --ink-2: #655f52;
+  /* Placeholder, 4.7:1 on cream. */
+  --ink-3: #6d6659;
+  /* Resting icons and lines, 3.7:1 on cream. */
+  --quiet: #7c776d;
+  --soft: rgba(27, 25, 20, 0.08);
+  /* Urgency dots, each at least 3:1 on cream; the -ink ones are for text and carets. */
+  --g: #2f8f55;
+  --o: #c96a12;
+  --r: #d2402f;
+  --g-ink: #1f6b3c;
+  --o-ink: #8a4706;
+  --r-ink: #a82c1e;
+  --spring: cubic-bezier(0.2, 0.9, 0.25, 1.12);
+  --ease: cubic-bezier(0.3, 0.7, 0.2, 1);
+  --ui: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001 85.9%, 1);
+  }
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+    background: var(--cream);
+    /* Opening the sent list makes the page scroll; the column must not jump sideways. */
+    scrollbar-gutter: stable;
+  }
+  body {
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--ui);
+    font-optical-sizing: auto;
+    font-size: 17px;
+    line-height: 1.4;
+  }
+}
+
+@layer components {
+  .vh {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* The .svg file is the mask, the colour comes from the text around it. */
+  .ico {
+    display: block;
+    flex: none;
+    width: var(--s, 18px);
+    height: var(--s, 18px);
+    background: currentColor;
+    -webkit-mask: var(--i) center / contain no-repeat;
+    mask: var(--i) center / contain no-repeat;
+  }
+  .screen :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  /* Urgency is a colour and a size (and a word for screen readers and tooltips). */
+  .u-g {
+    --u: var(--g);
+    --u-ink: var(--g-ink);
+    --d: 8px;
+  }
+  .u-o {
+    --u: var(--o);
+    --u-ink: var(--o-ink);
+    --d: 11px;
+  }
+  .u-r {
+    --u: var(--r);
+    --u-ink: var(--r-ink);
+    --d: 14px;
+  }
+
+  .screen {
+    position: relative;
+    max-width: 608px;
+    min-height: 100dvh;
+    margin: 0 auto;
+    /* The input and its row of icons sit in the middle of the screen; the sent list opens below without moving them. */
+    padding: max(72px, calc(50dvh - 64px)) max(24px, env(safe-area-inset-right)) calc(56px + env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  }
+
+  /* The three states share one cell, so the input never moves between them. */
+  .stage {
+    display: grid;
+  }
+  .ps {
+    grid-area: 1 / 1;
+    position: relative;
+    min-width: 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(6px);
+    transition:
+      opacity 0.2s var(--ease),
+      transform 0.2s var(--ease),
+      visibility 0s 0.2s;
+  }
+  .ps.on {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+      opacity 0.4s var(--ease) 0.15s,
+      transform 0.6s var(--spring) 0.15s,
+      visibility 0s;
+  }
+
+  /* ---- the one input ---- */
+  .line {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 12px;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1.5px solid var(--quiet);
+  }
+  /* Focus draws the line in ink from the left. */
+  .line::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1.5px;
+    height: 2px;
+    background: var(--ink);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.5s var(--ease);
+  }
+  .line:focus-within::after {
+    transform: scaleX(1);
+  }
+  .pf-in {
+    display: block;
+    width: 100%;
+    height: 52px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--ink);
+    caret-color: var(--u-ink, var(--ink));
+    font-size: clamp(25px, 6.6vw, 32px);
+    font-weight: 400;
+    letter-spacing: -0.012em;
+    line-height: 52px;
+    text-overflow: ellipsis;
+  }
+  input.pf-in::placeholder {
+    color: var(--ink-3);
+    font-style: italic;
+    opacity: 1;
+  }
+  /* The line under it is the focus mark. */
+  .screen input.pf-in:focus-visible {
+    outline: 0;
+  }
+  .pf-in.code:not(:placeholder-shown) {
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: 0.24em;
+  }
+  .pf-in:-webkit-autofill {
+    -webkit-text-fill-color: var(--ink);
+    box-shadow: 0 0 0 100px var(--cream) inset;
+  }
+
+  /* The arrow: an outline while there is nothing to send, ink once there is. */
+  .go {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    overflow: hidden;
+    color: var(--quiet);
+    box-shadow: inset 0 0 0 1.5px var(--quiet);
+    cursor: pointer;
+    transition:
+      background 0.25s var(--ease),
+      color 0.25s var(--ease),
+      box-shadow 0.25s var(--ease),
+      transform 0.45s var(--spring);
+  }
+  .has .go,
+  .go[aria-busy='true'] {
+    background: var(--ink);
+    color: var(--cream);
+    box-shadow: inset 0 0 0 1.5px var(--ink);
+  }
+  .go:active {
+    transform: scale(0.92);
+  }
+  .go:disabled {
+    cursor: progress;
+  }
+  .go-i {
+    display: block;
+  }
+  .go-i.fly {
+    animation: u-fly 0.55s var(--ease);
+  }
+  /* A stroke of the urgency colour runs along the line as the message leaves. */
+  .sweep {
+    position: absolute;
+    z-index: 1;
+    left: 0;
+    right: 0;
+    bottom: -1.5px;
+    height: 2px;
+    background: var(--u);
+    transform: scaleX(0);
+    transform-origin: left;
+    pointer-events: none;
+  }
+  .sweep.run {
+    animation: u-sweep 0.8s var(--ease);
+  }
+  .spin {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid rgba(243, 235, 217, 0.3);
+    border-top-color: var(--cream);
+    animation: u-spin 0.8s linear infinite;
+  }
+
+  /* One short line, only when something went wrong. It sits above the input, in the white space. */
+  .ps-note {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 10px);
+    font-size: 16px;
+    line-height: 1.3;
+    color: var(--r-ink);
+  }
+  .ps-note:not(:empty) {
+    animation: u-note 0.45s var(--spring);
+  }
+
+  .ps-note.short {
+    right: 4ch;
+  }
+  /* Something is wrong: the line and the caret turn to the error ink. */
+  .bad .line {
+    border-bottom-color: var(--r-ink);
+  }
+  .bad .line::after {
+    background: var(--r-ink);
+  }
+  .bad .pf-in {
+    caret-color: var(--r-ink);
+  }
+  .line.nudge-a,
+  .pf-later.nudge-a {
+    animation: u-nudge-a 0.4s var(--ease);
+  }
+  .line.nudge-b,
+  .pf-later.nudge-b {
+    animation: u-nudge-b 0.4s var(--ease);
+  }
+  /* Characters left, only near the limit. It shares the line above the input with the note. */
+  .ps-count {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    color: var(--ink-2);
+    font-size: 16px;
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: 1.3;
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity 0.25s var(--ease),
+      transform 0.45s var(--spring),
+      color 0.25s var(--ease);
+  }
+  .ps-count.on {
+    opacity: 1;
+    transform: none;
+  }
+  .ps-count.full {
+    color: var(--r-ink);
+  }
+  /* Six ticks by the arrow fill in as the code is typed. */
+  .ticks {
+    position: absolute;
+    right: 60px;
+    bottom: 34px;
+    display: flex;
+    gap: 5px;
+    pointer-events: none;
+  }
+  .ticks i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px var(--quiet);
+    transition:
+      background 0.2s var(--ease),
+      box-shadow 0.2s var(--ease),
+      transform 0.4s var(--spring);
+  }
+  .ticks i.on {
+    background: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink);
+    transform: scale(1.15);
+  }
+  .bad .ticks i:not(.on) {
+    box-shadow: inset 0 0 0 1px var(--r-ink);
+  }
+  .pf-in.code {
+    padding-right: 64px;
+  }
+  /* A likely typo: the corrected address, one tap away. */
+  .ps-fix {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    height: 34px;
+    padding: 0 12px 0 10px;
+    border-radius: 11px;
+    background: var(--soft);
+    color: var(--ink);
+    font-size: 16px;
+    cursor: pointer;
+    animation: u-rise 0.45s var(--spring);
+    transition: transform 0.45s var(--spring);
+  }
+  .ps-fix:active {
+    transform: scale(0.96);
+  }
+  .ps-fix span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pf-later.bad input.chip {
+    box-shadow: inset 0 0 0 1.5px var(--r-ink);
+    color: var(--r-ink);
+  }
+
+  /* ---- the row of small controls ---- */
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 36px;
+    margin-top: 12px;
+  }
+  .tos,
+  .urgs {
+    display: flex;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .tos label,
+  .urgs label {
+    position: relative;
+    display: block;
+  }
+  .tos input,
+  .urgs input {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* Dominik / agent: two small icons, a soft tile slides under the chosen one. */
+  .tos {
+    position: relative;
+  }
+  .tos::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    background: var(--soft);
+    transition: transform 0.5s var(--spring);
+  }
+  .tos[data-to='agent']::before {
+    transform: translateX(34px);
+  }
+  .tos label > span {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    color: var(--quiet);
+    transition:
+      color 0.25s var(--ease),
+      transform 0.45s var(--spring);
+  }
+  .tos input:checked + span {
+    color: var(--ink);
+  }
+  .tos input:active + span,
+  .urgs input:active + span {
+    transform: scale(0.88);
+  }
+  .tos input:focus-visible + span,
+  .urgs input:focus-visible + span {
+    outline: 2px solid var(--ink);
+    outline-offset: 1px;
+  }
+
+  /* Urgency: three dots that grow with it. The chosen one wears a ring. */
+  .urgs label > span {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 34px;
+    border-radius: 11px;
+    transition: transform 0.45s var(--spring);
+  }
+  .urgs label > span::before {
+    content: '';
+    width: var(--d);
+    height: var(--d);
+    border-radius: 50%;
+    background: var(--u);
+    box-shadow:
+      0 0 0 0 var(--cream),
+      0 0 0 0 var(--ink);
+    transition: box-shadow 0.35s var(--spring);
+  }
+  .urgs input:checked + span::before {
+    box-shadow:
+      0 0 0 3px var(--cream),
+      0 0 0 4.5px var(--ink);
+  }
+  .urgs label:hover > span {
+    transform: scale(1.12);
+  }
+
+  /* The clock, and the sent toggle at the far end. */
+  .tool,
+  .sent {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    border-radius: 11px;
+    color: var(--quiet);
+    cursor: pointer;
+    transition:
+      background 0.25s var(--ease),
+      color 0.25s var(--ease),
+      opacity 0.25s var(--ease),
+      transform 0.45s var(--spring);
+  }
+  .tool {
+    width: 34px;
+  }
+  .tool:hover,
+  .sent:hover {
+    color: var(--ink);
+  }
+  .tool:active,
+  .sent:active {
+    transform: scale(0.92);
+  }
+  .tool[aria-expanded='true'] {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .tool.off,
+  .sent.off {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.8);
+  }
+  .sent {
+    gap: 6px;
+    margin-left: auto;
+    padding: 0 9px;
+  }
+  .sent.open {
+    background: var(--soft);
+    color: var(--ink);
+  }
+  .sent-i {
+    position: relative;
+    display: block;
+  }
+  .sent-n {
+    min-width: 1ch;
+    color: var(--ink-2);
+    font-size: 16px;
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: 1;
+    animation: u-count 0.5s var(--spring);
+  }
+  .sent.open .sent-n {
+    color: var(--ink);
+  }
+  /* A reply is waiting: a dot that lands and breathes out twice. */
+  .badge {
+    position: absolute;
+    top: -4px;
+    right: -5px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--r);
+    box-shadow: 0 0 0 2px var(--cream);
+    animation: u-pop 0.5s var(--spring);
+  }
+  .badge::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1.5px var(--r);
+    opacity: 0;
+    animation: u-ring 1.6s var(--ease) 0.4s 2;
+  }
+
+  /* ---- later: day, time, repeat. Its row is always there, so nothing below moves. ---- */
+  .pf-later {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    margin-top: 10px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-5px);
+    transition:
+      opacity 0.2s var(--ease),
+      transform 0.2s var(--ease),
+      visibility 0s 0.2s;
+  }
+  .pf-later.on {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+      opacity 0.3s var(--ease),
+      transform 0.5s var(--spring),
+      visibility 0s;
+  }
+  /* 16px and up so iOS does not zoom in on focus. */
+  .chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    height: 36px;
+    padding: 0 11px;
+    border: 0;
+    border-radius: 11px;
+    background: var(--soft);
+    color: var(--ink);
+    font-size: 16px;
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  input.chip {
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  /* The whole chip opens the native picker; its own little icon is not drawn. */
+  input.chip::-webkit-calendar-picker-indicator {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  input.chip::-webkit-date-and-time-value {
+    text-align: left;
+  }
+  .chip.rep {
+    color: var(--quiet);
+    cursor: pointer;
+    transition: color 0.25s var(--ease);
+  }
+  .chip.rep.set {
+    color: var(--ink);
+  }
+  .chip.rep select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .chip.rep:focus-within {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  /* ---- sign-in: the way back shows where the code went ---- */
+  .ps-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    height: 34px;
+    margin-left: -8px;
+    padding: 0 8px;
+    border-radius: 11px;
+    color: var(--ink-2);
+    font-size: 16px;
+    cursor: pointer;
+    transition: color 0.25s var(--ease);
+  }
+  .ps-back span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ps-back:hover {
+    color: var(--ink);
+  }
+
+  /* ---- sent rows, only while opened ---- */
+  .its-wrap {
+    margin-top: 16px;
+  }
+  .its {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .it {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) 24px;
+    column-gap: 14px;
+    align-items: start;
+    padding: 11px 0;
+    animation: u-rise 0.5s var(--ease) backwards;
+    animation-delay: calc(var(--n, 0) * 35ms);
+  }
+  .it + .it {
+    border-top: 1px solid var(--soft);
+  }
+  .it.new {
+    animation: u-drop 0.6s var(--spring);
+  }
+  .dot {
+    justify-self: center;
+    width: var(--d);
+    height: var(--d);
+    margin-top: calc((24px - var(--d)) / 2);
+    border-radius: 50%;
+    background: var(--u);
+  }
+  .it-b {
+    display: grid;
+    gap: 2px;
+  }
+  .it-t {
+    font-size: 17px;
+    line-height: 24px;
+    overflow-wrap: anywhere;
+    transition: color 0.3s var(--ease);
+  }
+  .it-to {
+    display: inline-block;
+    margin-right: 6px;
+    color: var(--ink-2);
+    vertical-align: -1px;
+  }
+  .it-ph {
+    display: block;
+    width: 62%;
+    height: 10px;
+    margin: 7px 0;
+    border-radius: 5px;
+    background: rgba(27, 25, 20, 0.12);
+    animation: u-wait 1.6s var(--ease) infinite;
+  }
+  .it-r {
+    display: flex;
+    gap: 7px;
+    align-items: flex-start;
+    color: var(--ink-2);
+    font-size: 16px;
+    font-style: italic;
+    line-height: 22px;
+    animation: u-reply 0.6s var(--spring);
+  }
+  .it-r .ico {
+    margin-top: 4px;
+  }
+  .it-r > span:last-child {
+    overflow-wrap: anywhere;
+  }
+  .it.gone .it-t {
+    color: var(--ink-2);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+  .it.gone .dot {
+    opacity: 0.45;
+  }
+  /* Every status sits in the same 24px cell, only one is on. Nothing around it moves. */
+  .st {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    color: var(--ink-2);
+  }
+  .st > span {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    transform: scale(0.6);
+    transition:
+      opacity 0.25s var(--ease),
+      transform 0.55s var(--spring);
+  }
+  .st > span.on {
+    opacity: 1;
+    transform: none;
+  }
+  .st .ok {
+    color: var(--g-ink);
+  }
+  .dots3 {
+    display: inline-flex;
+    gap: 3px;
+    height: 18px;
+    align-items: center;
+  }
+  .dots3 i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: u-dots 1.2s infinite var(--ease);
+  }
+  .dots3 i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .dots3 i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+@keyframes u-fly {
+  0% {
+    transform: none;
+    opacity: 1;
+  }
+  40% {
+    transform: translateY(-26px);
+    opacity: 0;
+  }
+  41% {
+    transform: translateY(22px);
+    opacity: 0;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes u-sweep {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  60% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+@keyframes u-nudge-a {
+  20% {
+    transform: translateX(-6px);
+  }
+  45% {
+    transform: translateX(5px);
+  }
+  70% {
+    transform: translateX(-3px);
+  }
+  90% {
+    transform: translateX(1px);
+  }
+}
+@keyframes u-nudge-b {
+  20% {
+    transform: translateX(-6px);
+  }
+  45% {
+    transform: translateX(5px);
+  }
+  70% {
+    transform: translateX(-3px);
+  }
+  90% {
+    transform: translateX(1px);
+  }
+}
+@keyframes u-note {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes u-count {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes u-pop {
+  from {
+    transform: scale(0);
+  }
+}
+@keyframes u-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+@keyframes u-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes u-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}
+@keyframes u-reply {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+@keyframes u-wait {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes u-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes u-dots {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen *,
+  .screen *::before,
+  .screen *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+  /* A slow spinner still says "working". */
+  .screen .spin {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* Hide Vite badge and error messages */
+body vite-error-overlay {
+  display: none;
+}

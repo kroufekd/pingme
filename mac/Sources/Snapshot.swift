@@ -1,0 +1,259 @@
+// Headless pictures of the island states with made-up data, for checking the look without installing.
+// One state per frame of design/v2/e-mac-minimal.html, same names and the same desktop slice.
+// Never builds the real store, the sync engine or the live feed.
+
+import AppKit
+import SwiftUI
+
+enum SnapshotState: String, CaseIterable {
+    case idle, idleHover = "idle-hover", idleWaiting = "idle-waiting", idleWaitingHover = "idle-waiting-hover"
+    case taskGreen = "task-green", taskOrange = "task-orange", taskRed = "task-red", taskAgent = "task-agent"
+    case taskHover = "task-hover"
+    case replyOpen = "reply-open", replyTyping = "reply-typing", replySent = "reply-sent"
+    case newEmpty = "new-empty", new, newLater = "new-later"
+    case waiting, waitingHover = "waiting-hover"
+    case people, peopleHover = "people-hover", peopleAdd = "people-add", peopleKey = "people-key"
+    // Extra checks, not frames of the design.
+    case taskOwnerHover = "task-owner-hover"
+    case agentDone = "agent-done", agentReply = "agent-reply", agentTriage = "agent-triage"
+
+    /// Height of the desktop slice, as in the design (`--h`).
+    var deskHeight: CGFloat {
+        switch self {
+        case .idle, .idleHover, .idleWaiting, .idleWaitingHover: return 120
+        case .replyOpen, .replyTyping, .replySent, .newLater: return 210
+        case .waiting, .waitingHover: return 230
+        case .people, .peopleHover, .peopleAdd, .peopleKey: return 260
+        case .agentTriage: return 270
+        case .agentDone, .agentReply: return 210
+        default: return 180
+        }
+    }
+
+    var menuLeft: [String] {
+        switch self {
+        case .idle, .idleHover, .idleWaiting: return ["Safari", "Soubor"]
+        default: return ["Safari"]
+        }
+    }
+
+    var menuRight: [String] {
+        switch self {
+        case .idle, .idleHover, .idleWaiting, .idleWaitingHover: return ["Po 16. 11.", "14:04"]
+        default: return ["14:04"]
+        }
+    }
+}
+
+/// Monday 16. 11. 2026, 14:04, like the design's menu bar.
+private let snapshotNow: Date = {
+    var c = DateComponents()
+    c.year = 2026; c.month = 11; c.day = 16; c.hour = 14; c.minute = 4
+    return Calendar.current.date(from: c) ?? Date()
+}()
+
+@MainActor
+private func sample(_ title: String, from name: String, kind: SenderKind, urgency: Urgency,
+                    showAt: Date, repeat rule: String? = nil, snoozedUntil: Date? = nil) -> TodoTask {
+    let sender = kind != .owner
+    return TodoTask(
+        _id: UUID().uuidString, title: title, dueAt: (snoozedUntil == nil ? showAt : showAt.addingTimeInterval(-3600)).ms,
+        createdAt: showAt.ms, source: sender ? "web" : "mac", createdByName: sender ? name : "Mac", doneAt: nil,
+        snoozedUntil: snoozedUntil?.ms, snoozeCount: snoozedUntil == nil ? 0 : 1, followUpTitle: nil,
+        followUpMinutes: nil, followsFrom: nil, repeat: rule,
+        senderId: sender ? "s-\(name)" : nil, senderKind: sender ? kind.rawValue : nil,
+        urgency: urgency.rawValue, taskRef: sender ? UUID().uuidString : nil)
+}
+
+@MainActor
+private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
+    let cal = Calendar.current
+    func at(days: Int, _ h: Int, _ m: Int) -> Date {
+        let d = cal.date(byAdding: .day, value: days, to: now) ?? now
+        return cal.date(bySettingHour: h, minute: m, second: 0, of: d) ?? d
+    }
+    let viki = sample("Vyndej prádlo z pračky", from: "Viki", kind: .person, urgency: .red, showAt: now.addingTimeInterval(-130))
+    model.waitingCount = 4
+    switch state {
+    case .idle, .idleHover, .idleWaiting, .idleWaitingHover:
+        model.mode = .closed
+        model.shown = .compose
+        model.earsCount = [.idleWaiting, .idleWaitingHover].contains(state) ? 2 : 0
+        model.earsUrgency = .orange
+        model.peek = [.idleHover, .idleWaitingHover].contains(state)
+    case .agentDone, .agentReply:
+        var t = sample("PR #482 je hotový a preview se builduje. Přihlas se v panelu přes Google, pak projedu QA.", from: "macaly",
+                       kind: .owner, urgency: .green, showAt: now)
+        t.source = "agent"
+        t.createdByName = "macaly pricing · čeká na deploy a QA na preview"
+        t.agentSession = "7b9a3941-d23d-4ec7-8725-69c0fd75f5a2"
+        model.mode = .task
+        model.shown = .task
+        model.hover = true
+        if state == .agentReply {
+            model.replyOpen = true
+            model.replyText = "Super, pusť i Mac appku"
+            model.stillFocus = "reply"
+        }
+        model.current = t
+    case .agentTriage:
+        var t = sample("Odkaz na pozvánku mi hází chybu, můžeš kouknout?", from: "Viki", kind: .person,
+                       urgency: .orange, showAt: now)
+        t.to = "agent"
+        t.triage = "done"
+        t.agentSession = "0a5b9c11-093d-43e7-8a6a-569fe6cc8ba8"
+        t.report = "Viki nejde otevřít pozvánka, text chyby neposlala.\nNejspíš v2/convex/inviteLinks.ts, check a start vrací bad-link.\nOdhad práce: malé.\nDoporučení: zeptat se Viki na přesný text chyby."
+        model.mode = .task
+        model.shown = .task
+        model.hover = true
+        model.current = t
+    case .taskGreen, .taskOrange, .taskRed, .taskAgent, .taskHover, .replyOpen, .replyTyping, .replySent, .taskOwnerHover:
+        var t: TodoTask
+        switch state {
+        case .taskGreen: t = sample("Až budeš mít chvilku, zavolej", from: "Máma", kind: .person, urgency: .green, showAt: now)
+        case .taskOrange: t = sample("Pošli mi fotky z hor", from: "Franta", kind: .person, urgency: .orange, showAt: now)
+        case .taskAgent:
+            t = sample("PR s pozvánkami je hotový, mrkni na preview", from: "Claude Code - macaly", kind: .agent,
+                       urgency: .green, showAt: now.addingTimeInterval(-70))
+        case .taskOwnerHover: t = sample("Zalít kytky", from: "", kind: .owner, urgency: .orange, showAt: now, repeat: "weekly")
+        default: t = viki
+        }
+        model.mode = .task
+        model.shown = .task
+        model.hover = state == .taskHover || state == .taskOwnerHover
+        if state == .replyOpen || state == .replyTyping { model.replyOpen = true }
+        if state == .replyTyping {
+            model.replyText = "Za 5 minut, dopisuju mail"
+            model.stillFocus = "reply"
+        }
+        if state == .replySent {
+            t.reply = "Za 5 minut, dopisuju mail"
+            t.touchedAt = now.ms
+            model.sentNote = "Za 5 minut, dopisuju mail"
+        }
+        model.current = t
+    case .newEmpty, .new, .newLater:
+        model.mode = .compose
+        model.shown = .compose
+        model.newTitle = state == .newEmpty ? "" : "Zavolat instalatérovi"
+        model.newUrgency = state == .newLater ? .orange : .green
+        model.later = state == .newLater
+        model.laterDate = at(days: 1, 9, 30)
+        model.laterRepeat = state == .newLater ? "weekdays" : ""
+        if state == .new { model.stillFocus = "title" }
+    case .waiting, .waitingHover:
+        model.mode = .waiting
+        model.shown = .waiting
+        let first = sample("Stav se pro klíče", from: "Viki", kind: .person, urgency: .red,
+                           showAt: now.addingTimeInterval(480), snoozedUntil: now.addingTimeInterval(480))
+        model.waitingRows = [
+            first,
+            sample("Zavolat instalatérovi", from: "", kind: .owner, urgency: .orange, showAt: at(days: 1, 9, 30)),
+            sample("Vrať mi vrtačku", from: "Franta", kind: .person, urgency: .green, showAt: at(days: 2, 18, 0)),
+            sample("Zalít kytky", from: "", kind: .owner, urgency: .green, showAt: at(days: 5, 10, 0), repeat: "weekly"),
+        ]
+        if state == .waitingHover { model.hoverRow = first.id }
+    case .people, .peopleHover, .peopleAdd, .peopleKey:
+        model.mode = .people
+        model.shown = .people
+        model.peopleLoad = .loaded
+        model.people = [
+            Sender(id: "1", kind: "person", name: "Viki", status: "active", email: "viki@example.com"),
+            Sender(id: "2", kind: "person", name: "Franta", status: "active", email: "franta@example.com"),
+            Sender(id: "3", kind: "person", name: "Kuba", status: "invited",
+                   inviteExpiresAt: now.addingTimeInterval(7 * 86400).ms),
+            Sender(id: "4", kind: "agent", name: "Claude Code - macaly", status: "active", keyTail: "x4Tq"),
+        ]
+        if state == .peopleHover { model.hoverRow = "2" }
+        if state == .peopleAdd {
+            model.personName = "Máma"
+            model.stillFocus = "name"
+        }
+        if state == .peopleKey {
+            model.people.append(Sender(id: "5", kind: "agent", name: "Codex", status: "active", keyTail: "cIkB"))
+            model.hoverRow = "5"
+            model.shownKey = "uk_demo_000000000000000000000000000000000000000"
+            model.said = "Zkopírováno, uvidíš ho jen teď."
+            model.saidOK = true
+        }
+    }
+}
+
+/// The design's desktop slice: cream gradient, a translucent menu bar, the island on top.
+private struct SnapshotDesktop: View {
+    @ObservedObject var model: IslandModel
+    let state: SnapshotState
+    let width: CGFloat
+    var still = false
+
+    var body: some View {
+        let m = model.metrics
+        let bar: CGFloat = 32
+        ZStack(alignment: .top) {
+            ZStack {
+                LinearGradient(colors: [Color(hex: 0xF1E6D2), Color(hex: 0xEEE7D6)],
+                               startPoint: UnitPoint(x: 0.33, y: 0), endPoint: UnitPoint(x: 0.67, y: 1))
+                EllipticalGradient(colors: [Color(hex: 0xF6D9B8), Color(hex: 0xF6D9B8, opacity: 0)],
+                                   center: UnitPoint(x: 0.08, y: 1.1), startRadiusFraction: 0, endRadiusFraction: 0.66)
+                EllipticalGradient(colors: [Color(hex: 0xCFE6D2), Color(hex: 0xCFE6D2, opacity: 0)],
+                                   center: UnitPoint(x: 0.96, y: 0.96), startRadiusFraction: 0, endRadiusFraction: 0.5)
+            }
+            HStack(spacing: 0) {
+                ForEach(Array(state.menuLeft.enumerated()), id: \.offset) { i, s in
+                    Text(s).font(Geist.font(12.5, i == 0 ? 600 : 500)).padding(.leading, i == 0 ? 0 : 12)
+                }
+                Spacer()
+                ForEach(Array(state.menuRight.enumerated()), id: \.offset) { i, s in
+                    Text(s).font(Geist.font(12.5, 500)).padding(.leading, i == 0 ? 0 : 12)
+                }
+            }
+            .foregroundStyle(Color(hex: 0x1B1A17))
+            .padding(.horizontal, 12)
+            .frame(height: bar)
+            .background(Color(hex: 0xFAF5E8, opacity: 0.55))
+            IslandView(model: model, actions: IslandActions())
+                .padding(.top, m.hasNotch ? 0 : bar)
+        }
+        .frame(width: width, height: state.deskHeight, alignment: .top)
+        .clipped()
+        .environment(\.islandStill, still)
+    }
+}
+
+@MainActor
+/// Default: SwiftUI ImageRenderer at 2x with stand-ins for AppKit controls. `appKit`: the real controls
+/// through NSView caching, at 1x. `real`: this Mac's own notch size instead of the design's.
+func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: Bool, real: Bool = false) -> Bool {
+    _ = NSApplication.shared
+    NSApp.appearance = NSAppearance(named: .darkAqua)
+    Geist.register()
+    let model = IslandModel()
+    if real, let s = NSScreen.builtIn ?? NSScreen.main {
+        model.metrics = IslandMetrics.forScreen(s)
+    } else {
+        model.metrics = fake ? .fake : .demo
+    }
+    model.now = snapshotNow
+    fill(model, state: state, now: model.now)
+
+    let width: CGFloat = 560
+    let hosting = NSHostingView(rootView: SnapshotDesktop(model: model, state: state, width: width, still: !appKit))
+    hosting.frame = NSRect(x: 0, y: 0, width: width, height: state.deskHeight)
+    let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: .darkAqua)
+    window.contentView = hosting
+    // Let the island measure itself and settle.
+    RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+    hosting.layoutSubtreeIfNeeded()
+    if !appKit {
+        // SwiftUI's own renderer draws the shapes exactly; text fields and menus are stand-ins.
+        let r = ImageRenderer(content: SnapshotDesktop(model: model, state: state, width: width, still: true))
+        r.scale = 2
+        guard let cg = r.cgImage, let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return false }
+        return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+    }
+    guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { return false }
+    hosting.cacheDisplay(in: hosting.bounds, to: rep)
+    guard let png = rep.representation(using: .png, properties: [:]) else { return false }
+    return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+}

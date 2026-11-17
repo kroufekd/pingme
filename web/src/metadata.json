@@ -1,0 +1,10 @@
+{
+  "default": {
+    "title": "pingme",
+    "description": "Úkol, který vyskočí na Macu."
+  },
+  "/": {
+    "title": "pingme",
+    "description": "Úkol, který vyskočí na Macu."
+  }
+}
