@@ -2,7 +2,7 @@ import { v } from "convex/values"
 import type { Infer } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import type { Doc } from "./_generated/dataModel"
-import { DONE_TTL, currentMember, lastSeen, ownStatus } from "./model"
+import { DONE_TTL, currentMember, ownStatus } from "./model"
 import { recipient, repeat, taskState, urgency } from "./validators"
 import type { SnapTask, TaskState } from "./validators"
 
@@ -126,7 +126,8 @@ export const mine = query({
     return {
       status: "member" as const,
       name: m.name,
-      macLastSeen: await lastSeen(ctx, "mac"),
+      // The web never shows it, and reading the heartbeat reran this query on every Mac sync.
+      macLastSeen: null,
       snapshotAt: snap?.at ?? null,
       rows: out.slice(0, MAX_ROWS),
     }

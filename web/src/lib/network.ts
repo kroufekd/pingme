@@ -53,8 +53,8 @@ export type SendArgs = {
 }
 export type SendReply = { ok: true; ref: string } | { ok: false; error: string; devices?: DeviceInfo[]; myDevices?: DeviceInfo[] }
 
-/** A Mac counts as online when it checked in during the last 5 minutes (same rule as the server). */
-export const ONLINE_MS = 5 * 60_000
+/** A Mac counts as online when it checked in during the last 12 minutes (same rule as the server). */
+export const ONLINE_MS = 12 * 60_000
 
 export function isOnline(macLastSeen: number | null | undefined, now: number) {
   return typeof macLastSeen === 'number' && now - macLastSeen < ONLINE_MS

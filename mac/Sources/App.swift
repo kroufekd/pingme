@@ -130,16 +130,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sync.syncNow()
     }
 
-    /// Sync cadence: live feed first, keep-alive every 60 s (that is what keeps this Mac online),
-    /// 3 s polling while the feed is down, nothing while asleep or locked for more than 5 minutes.
+    /// Sync cadence: live feed first, keep-alive every 5 min (that is what keeps this Mac online),
+    /// polling while the feed is down, nothing while asleep or locked for more than 5 minutes.
     private func schedule(now: Date = Date()) {
         guard sync.paired else { return }
         if !presence.asleep { feed.tick(now: now) }
         guard !presence.quiet(at: now) else { return }
         let since = now.timeIntervalSince(sync.lastAttempt)
-        if feed.downFor(at: now) >= 10, since >= 3 {
+        // Every sync is billed backend calls: keep-alive every 5 min (contacts see the Mac online
+        // for 12), and while the live feed is down poll every 3 s for a minute, then every 30 s.
+        let down = feed.downFor(at: now)
+        if down >= 10, since >= (down < 70 ? 3 : 30) {
             sync.syncNow()
-        } else if since >= 60 {
+        } else if since >= 300 {
             sync.syncNow()
         } else if sync.lastFailed, !store.outbox.isEmpty, since >= 5 {
             sync.syncNow()

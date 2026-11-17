@@ -912,8 +912,10 @@ describe("device API input", () => {
       contacts: [{ userId: D.userId, name: "Dominik", hasMac: true, online: true, macLastSeen: expect.any(Number), devices: [{ deviceId: dMac.deviceId, kind: "mac", publicKey: dMac.publicKey }] }],
     })
 
-    // Online goes off five minutes after the last keep-alive.
+    // Macs check in every 5 min: still online after 6, off after 12 without a keep-alive.
     await t.run((ctx) => ctx.db.patch(dMac.deviceId as Id<"devices">, { lastSeen: Date.now() - 6 * MINUTE }))
+    expect((await devJson(t, vMac.token, "GET", "/device/contacts")).contacts[0]).toMatchObject({ online: true, hasMac: true })
+    await t.run((ctx) => ctx.db.patch(dMac.deviceId as Id<"devices">, { lastSeen: Date.now() - 13 * MINUTE }))
     expect((await devJson(t, vMac.token, "GET", "/device/contacts")).contacts[0]).toMatchObject({ online: false, hasMac: true })
     await sync(t, dMac.token)
     expect((await devJson(t, vMac.token, "GET", "/device/contacts")).contacts[0]).toMatchObject({ online: true })

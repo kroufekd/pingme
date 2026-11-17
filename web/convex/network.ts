@@ -22,10 +22,10 @@ import type { ContactInfo, DeviceInfo, DeviceKind, DeviceStatus, EnvelopeIn, Inb
 
 export const MESSAGE_TTL = 7 * DAY
 export const PAIR_TTL = 10 * MINUTE
-/** A contact is online when one of its Macs checked in this recently. */
-export const ONLINE_TTL = 5 * MINUTE
+/** A contact is online when one of its Macs checked in this recently. Macs check in every 5 min. */
+export const ONLINE_TTL = 12 * MINUTE
 /** lastSeen is written at most this often, so keep-alives do not rerun every contacts query. */
-export const SEEN_GAP = 30_000
+export const SEEN_GAP = 4 * MINUTE
 /** Active devices per user and kind. The least recently seen one goes when a new one comes. */
 export const MAX_DEVICES = 10
 export const SEND_LIMIT = 30

@@ -796,6 +796,8 @@ describe("crons", () => {
       "drop shared list when nobody watches",
     ])
     expect(crons.crons["delete expired statuses, invite links and old commands"].schedule).toMatchObject({ type: "interval", hours: 1 })
-    expect(crons.crons["delete expired messages, pairing requests and rate limits"].schedule).toMatchObject({ type: "interval", minutes: 10 })
+    // Every cron run is a billed backend call: nothing runs more often than hourly.
+    expect(crons.crons["delete expired messages, pairing requests and rate limits"].schedule).toMatchObject({ type: "interval", hours: 1 })
+    expect(crons.crons["drop shared list when nobody watches"].schedule).toMatchObject({ type: "interval", hours: 1 })
   })
 })

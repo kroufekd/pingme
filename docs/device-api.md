@@ -350,8 +350,9 @@ answer 400 first. On 401 the Mac drops the token and shows "Připojit tento Mac"
 
 ### `POST /device/sync`: keep-alive, delivery, statuses, typing
 
-Call at least every 60 s (this is the keep-alive that makes you online), and right after the
-feed shows new messages or the outbox has statuses.
+Call every 5 minutes (this is the keep-alive: a Mac counts as online for 12 minutes after it), and
+right after the feed shows new messages or the outbox has statuses. Every call is billed, so do not
+poll faster; while the live feed is down, poll every 3 s for a minute, then every 30 s.
 
 ```json
 {
