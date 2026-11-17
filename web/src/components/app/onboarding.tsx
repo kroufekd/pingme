@@ -35,7 +35,7 @@ function useStill() {
 }
 
 /** Two icons on top of each other, so the shackle can drop on its own. */
-function Lock({ size }: { size: number }) {
+export function Lock({ size }: { size: number }) {
   return (
     <span className="ob-lock" style={{ '--s': `${size}px` } as CSSProperties}>
       <Icon name="lock-body" size={size} />

@@ -135,7 +135,9 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const sent = useSent({ enabled: network, device, view: contacts, now })
   const contactList = contacts?.status === 'member' ? contacts.contacts : null
   const myDevices = contacts?.status === 'member' ? contacts.me.devices : null
-  const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId)
+  // "Connect your agent" and "Devices" share one row and open one at a time.
+  const [drawer, setDrawer] = useState<'agent' | 'devices' | null>(null)
+  const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null))
   const people: Person[] | null = useMemo(
     () => contactList?.map((c) => ({ userId: c.userId, name: c.name, hasMac: c.hasMac, online: isOnline(c.macLastSeen, now) })) ?? null,
     [contactList, now],
@@ -244,7 +246,14 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
         )}
       </div>
       {listReady && <SentList rows={sent.rows} keyOf={sent.keyOf} onAck={sent.onAck} open={listOpen} showWho={(people?.length ?? 0) > 1} />}
-      {listReady && <ConnectAgent side={myDevices && deviceList.toggle} below={myDevices && deviceList.panel} />}
+      {listReady && (
+        <ConnectAgent
+          open={drawer === 'agent'}
+          onOpenChange={(o) => setDrawer(o ? 'agent' : null)}
+          side={myDevices && deviceList.toggle}
+          below={myDevices && deviceList.panel}
+        />
+      )}
       {/* Once per account, after the contacts are known. The text is end-to-end encrypted. */}
       {home && shown === 'form' && contactList !== null && needsOnboarding(me) && (
         <Onboarding

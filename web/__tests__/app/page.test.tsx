@@ -581,10 +581,34 @@ describe('connect your agent', () => {
     expect(panel).not.toHaveAttribute('aria-hidden')
     expect(panel).toHaveClass('on')
     expect(screen.getByRole('link', { name: /github\.com\/kroufekd\/pingme/ })).toHaveAttribute('href', 'https://github.com/kroufekd/pingme')
+    // Says why it is safe before anyone pastes it.
+    expect(panel).toHaveTextContent('End-to-end encrypted.')
+    expect(panel).toHaveTextContent('You connect the Mac.')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy prompt' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(sentence))
+    // One copy per click, though the button sits inside the card that also copies.
+    expect(writeText).toHaveBeenCalledTimes(1)
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
+    // A click anywhere on the prompt copies it too.
+    fireEvent.click(screen.getByText(sentence))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+
+    fireEvent.keyDown(panel!, { key: 'Escape' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(button).toHaveFocus()
+  })
+
+  it('opens one panel at a time: Devices closes the agent panel', async () => {
+    member()
+    render(<App />)
+    const agent = await screen.findByRole('button', { name: 'Connect your agent' })
+    const devices = screen.getByRole('button', { name: /^Devices/ })
+    fireEvent.click(agent)
+    expect(agent).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(devices)
+    expect(devices).toHaveAttribute('aria-expanded', 'true')
+    expect(agent).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('without a clipboard it selects the sentence instead of failing', async () => {
@@ -592,9 +616,9 @@ describe('connect your agent', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => Promise.reject(new Error('denied'))) }, configurable: true })
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Connect your agent' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy prompt' }))
     await waitFor(() => expect(window.getSelection()?.toString()).toContain('Install pingme'))
-    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy prompt' })).toBeInTheDocument()
   })
 })
 

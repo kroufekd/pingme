@@ -81,22 +81,25 @@ beforeEach(async () => {
 afterEach(() => cleanup())
 
 describe('devices on the account', () => {
-  it('lists every device; removing one that is not this browser takes two clicks', async () => {
+  it('lists every other device; removing one takes two clicks', async () => {
     member([browser(), dev({ deviceId: 'mac-me', name: 'Vikin Mac' }), dev({ deviceId: 'mac-evil', name: 'MacBook Pro', createdAt: Date.now() - 20 * DAY })])
-    render(<App />)
+    const view = render(<App />)
     const toggle = await screen.findByRole('button', { name: /^Devices/ })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    // In one row with "Connect your agent"; the list opens under that row, last on the page.
+    // Two Macs, both synced just now; this browser is not counted.
+    expect(toggle).toHaveAccessibleName('Devices 2, Connected')
+    // In one row with "Connect your agent"; the panel opens under that row, last on the page.
     expect(toggle.closest('.cn-bar')).toContainElement(screen.getByRole('button', { name: 'Connect your agent' }))
     fireEvent.click(toggle)
     const list = screen.getByRole('list', { name: 'Devices' })
-    expect(list.parentElement?.lastElementChild).toBe(list)
+    expect(view.container.querySelector('.cn')?.lastElementChild).toContainElement(list)
     const rows = within(list).getAllByRole('listitem')
-    // This browser first, then the newest, so an unknown Mac is near the top.
-    expect(rows.map((r) => r.querySelector('.dv-name')?.textContent)).toEqual(['Chrome · Mac', 'MacBook Pro', 'Vikin Mac'])
-    // This browser is marked and cannot remove itself from here.
-    expect(within(rows[0]).getByText('this one')).toBeInTheDocument()
-    expect(within(rows[0]).queryByRole('button')).toBeNull()
+    // Newest first, so an unknown Mac is near the top.
+    expect(rows.map((r) => r.querySelector('.dv-name')?.textContent)).toEqual(['MacBook Pro', 'Vikin Mac'])
+    expect(within(rows[0]).getByText('Connected')).toBeInTheDocument()
+    // This browser is named once under the list, not as a device to remove.
+    expect(screen.getByText('This browser:')).toBeInTheDocument()
+    expect(within(list).queryByText('Chrome · Mac')).toBeNull()
 
     const remove = within(list).getByRole('button', { name: 'Remove MacBook Pro' })
     fireEvent.click(remove)
@@ -106,6 +109,37 @@ describe('devices on the account', () => {
     fireEvent.click(remove)
     await waitFor(() => expect(mutation('devices:revoke')).toHaveBeenCalledWith({ deviceId: 'mac-evil' }))
     expect(mutation('devices:revoke')).toHaveBeenCalledTimes(1)
+  })
+
+  it('another browser on the account stays a row that can be removed', async () => {
+    member([browser(), dev({ deviceId: 'web-2', kind: 'web', name: 'Safari · iPhone', lastSeen: Date.now() - 3 * DAY })])
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: /^Devices/ })
+    // A browser is never "connected": no dot on the toggle.
+    expect(toggle).toHaveAccessibleName('Devices 1')
+    fireEvent.click(toggle)
+    const list = screen.getByRole('list', { name: 'Devices' })
+    expect(within(list).getByText('Safari · iPhone')).toBeInTheDocument()
+    expect(within(list).getByText(/^Seen /)).toBeInTheDocument()
+    expect(within(list).getByRole('button', { name: 'Remove Safari · iPhone' })).toBeInTheDocument()
+  })
+
+  it('a Mac that has not synced for a while shows when it was last seen', async () => {
+    member([browser(), dev({ deviceId: 'mac-me', name: 'Vikin Mac', lastSeen: Date.now() - 2 * HOUR })])
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: /^Devices/ })
+    expect(toggle).toHaveAccessibleName('Devices 1')
+    fireEvent.click(toggle)
+    expect(within(screen.getByRole('list', { name: 'Devices' })).queryByText('Connected')).toBeNull()
+  })
+
+  it('with only this browser it says there is no Mac yet', async () => {
+    member([browser()])
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: /^Devices/ })
+    expect(toggle).toHaveAccessibleName('Devices 0')
+    fireEvent.click(toggle)
+    expect(within(screen.getByRole('list', { name: 'Devices' })).getByText(/^No Mac yet/)).toBeInTheDocument()
   })
 
   it('announces a Mac that joined after this browser until it is confirmed', async () => {

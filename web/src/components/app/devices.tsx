@@ -1,14 +1,18 @@
 import { useMutation } from 'convex/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { isOnline } from '@/lib/network'
 import type { MyDevice } from '@/lib/network'
+import { slot } from './connect'
 import { Icon } from './icon'
 
 export const DEVICES = 'Devices'
 export const REMOVE = 'Remove'
 export const NEW_MAC = 'New Mac'
 export const MINE = "It's mine"
-const THIS = 'this one'
+export const CONNECTED = 'Connected'
+const THIS = 'This browser'
+const NO_MAC = 'No Mac yet. Connect your agent to set one up.'
 const SEEN_KEY = 'pingme:seen-macs'
 const ARM_MS = 4000
 /** A Mac that joined in the last week is announced on the browsers that were there before it. */
@@ -95,14 +99,22 @@ export function NewMacNotice({ devices, thisId, now }: { devices: MyDevice[]; th
   )
 }
 
+/** How a device is doing, for its row: a Mac that synced in the last minutes reads as connected. */
+export function deviceStatus(d: MyDevice, now: number): { on: boolean; text: string } {
+  if (d.kind === 'mac' && isOnline(d.lastSeen, now)) return { on: true, text: CONNECTED }
+  return { on: false, text: `Seen ${sameDay(d.lastSeen, now) ? 'today' : day(d.lastSeen)}` }
+}
+
+const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString()
+
 /**
- * Every device on the account, with a way to remove the ones that are not yours. Returns the
- * toggle and the list apart: the toggle sits in one row with "Connect your agent" and the list
- * opens under that row, so opening it moves nothing above it.
+ * The devices on the account, with a way to remove the ones that are not yours. This browser is
+ * not a row: it is the page you are on, named once at the bottom, so a single paired Mac reads
+ * as one device. Returns the toggle and the panel apart: the toggle sits at the right end of the
+ * row with "Connect your agent" and the panel opens under that row, so it moves nothing above it.
  */
-export function useDeviceList(devices: MyDevice[], thisId: string | null) {
+export function useDeviceList(devices: MyDevice[], thisId: string | null, now: number, open: boolean, onOpenChange: (open: boolean) => void) {
   const revoke = useMutation(api.devices.revoke)
-  const [open, setOpen] = useState(false)
   // The first click arms the remove button, the second removes: one slip must not unpair a Mac.
   const [armed, setArmed] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -115,10 +127,14 @@ export function useDeviceList(devices: MyDevice[], thisId: string | null) {
     return () => clearTimeout(t)
   }, [armed])
 
-  const sorted = useMemo(
-    () => [...devices].sort((a, b) => (a.deviceId === thisId ? -1 : b.deviceId === thisId ? 1 : b.createdAt - a.createdAt)),
-    [devices, thisId],
-  )
+  useEffect(() => {
+    if (!open) setArmed(null)
+  }, [open])
+
+  const self = thisId ? devices.find((d) => d.deviceId === thisId) : undefined
+  // Newest first, so a Mac nobody expected is at the top.
+  const others = useMemo(() => devices.filter((d) => d.deviceId !== thisId).sort((a, b) => b.createdAt - a.createdAt), [devices, thisId])
+  const connected = others.some((d) => deviceStatus(d, now).on)
 
   async function remove(d: MyDevice) {
     if (armed !== d.deviceId) {
@@ -146,61 +162,82 @@ export function useDeviceList(devices: MyDevice[], thisId: string | null) {
       className="cn-b dv-b"
       aria-expanded={open}
       aria-controls={id}
-      onClick={() => {
-        setOpen((o) => !o)
-        setArmed(null)
-      }}
+      aria-label={`${DEVICES} ${others.length}${connected ? `, ${CONNECTED}` : ''}`}
+      onClick={() => onOpenChange(!open)}
     >
       <span className="dv-b-i" aria-hidden="true">
         <Icon name="laptop" size={16} />
+        {connected && <span className="dv-b-dot" />}
       </span>
-      <span>{DEVICES}</span>
-      <span className="dv-n">{devices.length}</span>
+      <span className="dv-b-t" aria-hidden="true">
+        {DEVICES}
+      </span>
+      <span className="dv-n" aria-hidden="true">
+        {others.length}
+      </span>
     </button>
   )
 
   const panel = (
-    <ul
-      className={open ? 'dv-p on' : 'dv-p'}
+    <div
+      className={open ? 'rv dv-p on' : 'rv dv-p'}
       id={id}
       inert={!open}
       aria-hidden={!open || undefined}
-      aria-label={DEVICES}
       onKeyDown={(e) => {
         if (e.key !== 'Escape') return
-        setOpen(false)
-        setArmed(null)
+        onOpenChange(false)
         toggleRef.current?.focus()
       }}
     >
-      {sorted.map((d) => {
-        const self = d.deviceId === thisId
-        const on = armed === d.deviceId
-        return (
-          <li key={d.deviceId} className="dv-row">
-            <span className="dv-row-i">
-              <Icon name={d.kind === 'mac' ? 'laptop' : 'globe'} size={18} />
-            </span>
-            <span className="dv-name">{d.name}</span>
-            <span className="dv-meta">{self ? THIS : day(d.createdAt)}</span>
-            <span className="dv-act">
-              {!self && (
-                <button
-                  type="button"
-                  className={on ? 'chip dv-rm on' : 'chip dv-rm'}
-                  onClick={() => void remove(d)}
-                  disabled={busy}
-                  aria-label={on ? `Confirm: ${REMOVE} ${d.name}` : `${REMOVE} ${d.name}`}
-                  title={REMOVE}
-                >
-                  {on ? <span>{REMOVE}</span> : <Icon name="x" size={16} />}
-                </button>
-              )}
-            </span>
-          </li>
-        )
-      })}
-    </ul>
+      <div className="rv-c">
+        <div className="rv-card dv-card">
+          <ul className="dv-list" aria-label={DEVICES}>
+            {others.length === 0 && (
+              <li className="dv-none rv-i" style={slot(0)}>
+                {NO_MAC}
+              </li>
+            )}
+            {others.map((d, i) => {
+              const on = armed === d.deviceId
+              const status = deviceStatus(d, now)
+              return (
+                <li key={d.deviceId} className="dv-row rv-i" style={slot(i)}>
+                  <span className="dv-row-i">
+                    <Icon name={d.kind === 'mac' ? 'laptop' : 'globe'} size={18} />
+                  </span>
+                  <span className="dv-name">{d.name}</span>
+                  <span className={status.on ? 'dv-st on' : 'dv-st'}>
+                    <span className="dv-dot" aria-hidden="true" />
+                    {status.text}
+                  </span>
+                  <span className="dv-act">
+                    <button
+                      type="button"
+                      className={on ? 'chip dv-rm on' : 'chip dv-rm'}
+                      onClick={() => void remove(d)}
+                      disabled={busy}
+                      aria-label={on ? `Confirm: ${REMOVE} ${d.name}` : `${REMOVE} ${d.name}`}
+                      title={REMOVE}
+                    >
+                      {on ? <span>{REMOVE}</span> : <Icon name="x" size={16} />}
+                    </button>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          {self && (
+            <p className="dv-this rv-i" style={slot(Math.max(1, others.length))}>
+              <Icon name="globe" size={15} />
+              <span>
+                {THIS}: <span className="dv-this-n">{self.name}</span>
+              </span>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   )
 
   return { toggle, panel }
