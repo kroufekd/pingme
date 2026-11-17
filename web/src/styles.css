@@ -797,6 +797,102 @@ body {
     outline-offset: 3px;
   }
 
+  /* ---- time: on a desktop our own list instead of the browser's grey one ---- */
+  .tf {
+    position: relative;
+    display: inline-flex;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .tf input.chip {
+      cursor: pointer;
+    }
+    .tf input.chip::-webkit-calendar-picker-indicator {
+      display: none;
+    }
+  }
+  .tf-pop {
+    position: absolute;
+    z-index: 6;
+    top: calc(100% + 8px);
+    left: -6px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 6px;
+    border-radius: 16px;
+    background: var(--cream);
+    box-shadow:
+      0 0 0 1px rgba(27, 25, 20, 0.08),
+      0 18px 40px -12px rgba(27, 25, 20, 0.3);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px) scale(0.98);
+    transform-origin: top left;
+    transition:
+      opacity 0.18s var(--ease),
+      transform 0.18s var(--ease),
+      visibility 0s 0.18s;
+  }
+  .tf-pop.on {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+      opacity 0.25s var(--ease),
+      transform 0.45s var(--spring),
+      visibility 0s;
+  }
+  /* Five rows tall, fading at both ends; the chosen one sits in the middle. */
+  .tf-col {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 58px;
+    height: 196px;
+    padding: 81px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-snap-type: y proximity;
+    scrollbar-width: none;
+    -webkit-mask: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+    mask: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+  }
+  .tf-col::-webkit-scrollbar {
+    display: none;
+  }
+  .tf-col button {
+    flex: none;
+    height: 34px;
+    border-radius: 10px;
+    color: var(--ink);
+    font-size: 17px;
+    font-variant-numeric: tabular-nums lining-nums;
+    cursor: pointer;
+    scroll-snap-align: center;
+    transition:
+      background 0.2s var(--ease),
+      color 0.2s var(--ease),
+      transform 0.4s var(--spring);
+  }
+  .tf-col button:hover {
+    background: var(--soft);
+  }
+  .tf-col button:active {
+    transform: scale(0.92);
+  }
+  .tf-col button.past {
+    color: var(--quiet);
+  }
+  .tf-col button.on {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .tf-sep {
+    color: var(--quiet);
+    font-size: 18px;
+  }
+
   /* ---- sign-in: the way back shows where the code went ---- */
   .ps-back {
     display: inline-flex;

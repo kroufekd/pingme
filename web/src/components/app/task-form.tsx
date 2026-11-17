@@ -7,6 +7,7 @@ import { DAY_MS, MAX_DAYS, dateTime, dayKey, laterDefault, timeKey } from '@/lib
 import { charsLeft, checkLater } from '@/lib/validate'
 import type { Repeat } from '@/lib/time'
 import { Icon } from './icon'
+import { TimeField } from './time-field'
 import { NO_APP, PeoplePicker } from './people-picker'
 import type { Person } from './people-picker'
 import { useNudge } from './sign-in'
@@ -288,16 +289,13 @@ export function TaskForm({
             setNote(null)
           }}
         />
-        <input
-          className="chip"
-          type="time"
-          aria-label="Time"
-          title="Time"
-          aria-invalid={laterBad ? true : undefined}
-          aria-describedby={laterBad ? 'u-form-note' : undefined}
+        <TimeField
           value={time}
-          onChange={(e) => {
-            setTime(e.target.value)
+          min={later && day === dayKey(today) ? timeKey(today) : undefined}
+          invalid={!!laterBad}
+          describedBy={laterBad ? 'u-form-note' : undefined}
+          onChange={(v) => {
+            setTime(v)
             setNote(null)
           }}
         />
