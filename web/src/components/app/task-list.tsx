@@ -7,8 +7,8 @@ import { useNow } from '@/lib/time'
 import { Icon } from './icon'
 
 export const SENT_ID = 'u-sent'
-export const TITLE_ELSEWHERE = 'Text je na jiném zařízení.'
-export const REPLY_ELSEWHERE = 'Odpověď je na jiném zařízení.'
+export const TITLE_ELSEWHERE = 'Text is on another device.'
+export const REPLY_ELSEWHERE = 'Reply is on another device.'
 
 /** A reply this device has to show: its text, or the note that it was sealed for another device. */
 function hasReply(r: Row) {
@@ -26,7 +26,7 @@ export function hasUnseenReply(rows: Row[]) {
  */
 export function SentToggle({ count, badge, open, onToggle }: { count: number; badge: boolean; open: boolean; onToggle: () => void }) {
   const shown = count > 0
-  const label = `Odeslané: ${count}${badge ? ', nová odpověď' : ''}`
+  const label = `Sent: ${count}${badge ? ', new reply' : ''}`
   return (
     <button
       type="button"
@@ -34,7 +34,7 @@ export function SentToggle({ count, badge, open, onToggle }: { count: number; ba
       aria-expanded={open}
       aria-controls={SENT_ID}
       aria-label={label}
-      title={badge ? 'Odeslané, nová odpověď' : 'Odeslané'}
+      title={badge ? 'Sent, new reply' : 'Sent'}
       onClick={onToggle}
       inert={!shown}
       aria-hidden={!shown || undefined}
@@ -104,13 +104,13 @@ function Item({ row, reply, now, isNew, index, showWho }: { row: Row; reply: str
         ) : (
           <p className="it-t">
             <span className="it-ph" aria-hidden="true" />
-            <span className="vh">Text se načítá</span>
+            <span className="vh">Loading text</span>
           </p>
         )}
         {(reply || row.replyMissing) && (
           <p className={reply ? 'it-r' : 'it-r it-miss'}>
             <Icon name="reply" size={14} />
-            <span className="vh">Odpověď: </span>
+            <span className="vh">Reply: </span>
             <span>{reply ?? REPLY_ELSEWHERE}</span>
           </p>
         )}
@@ -182,14 +182,14 @@ export function SentList({
       const key = keyOf(r)
       const kind = kindOf(r, now)
       next.set(key, kind)
-      if (kinds.current && kinds.current.get(key) !== kind) changes.push(`${r.title ?? 'Úkol'}: ${spokenFor(kind, r, now)}`)
+      if (kinds.current && kinds.current.get(key) !== kind) changes.push(`${r.title ?? 'Ping'}: ${spokenFor(kind, r, now)}`)
     }
     kinds.current = next
     if (changes.length > 0) setSaid(changes.join('. '))
   }, [rows, now, keyOf])
 
   return (
-    <section className="its-wrap" id={SENT_ID} aria-label="Odeslané">
+    <section className="its-wrap" id={SENT_ID} aria-label="Sent">
       {open && (
         <ul className="its">
           {rows.map((r, i) => {

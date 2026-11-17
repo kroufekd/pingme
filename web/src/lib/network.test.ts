@@ -4,7 +4,7 @@ import { browserName, loadDeviceKey, resetDeviceKey } from './device-key'
 import { ONLINE_MS, isOnline, openRow, sendSealed } from './network'
 import type { SendArgs, SendReply } from './network'
 import { parsePairHash, secretHash } from './pair'
-import { accusative, initials, pingPlaceholder } from './people'
+import { initials, pingPlaceholder } from './people'
 import { aadFor, generateKeyPair, open, seal } from './seal'
 import { resetVault, vaultGet, vaultInMemory, vaultSet } from './vault'
 
@@ -16,29 +16,10 @@ describe('names', () => {
     expect(initials('')).toBe('?')
   })
 
-  it('accusative only where the plain rule is right', () => {
-    expect(accusative('Dominik')).toBe('Dominika')
-    expect(accusative('Michal')).toBe('Michala')
-    expect(accusative('Tomáš')).toBe('Tomáše')
-    expect(accusative('Ondřej')).toBe('Ondřeje')
-    expect(accusative('Eva')).toBe('Evu')
-    expect(accusative('Honza')).toBe('Honzu')
-    expect(accusative('Lucie')).toBe('Lucii')
-    expect(accusative('Viki')).toBe('Viki')
-    expect(accusative('Dominik Kroufek')).toBe('Dominika')
-    // Mobile e, long vowels and the unknown stay out.
-    expect(accusative('Marek')).toBeNull()
-    expect(accusative('Pavel')).toBeNull()
-    expect(accusative('Jiří')).toBeNull()
-    expect(accusative('R2')).toBeNull()
-  })
-
-  it('the placeholder falls back to a sentence that needs no declension', () => {
-    expect(pingPlaceholder('Dominik')).toBe('Pingni Dominika…')
-    expect(pingPlaceholder('Viki')).toBe('Pingni Viki…')
-    expect(pingPlaceholder('Marek')).toBe('Co má Marek udělat…')
-    expect(pingPlaceholder('Jiří Novák')).toBe('Co má Jiří udělat…')
-    expect(pingPlaceholder(null)).toBe('Pingni…')
+  it('the placeholder names the first name only', () => {
+    expect(pingPlaceholder('Dominik')).toBe('Ping Dominik…')
+    expect(pingPlaceholder('Jiří Novák')).toBe('Ping Jiří…')
+    expect(pingPlaceholder(null)).toBe('Ping…')
   })
 })
 

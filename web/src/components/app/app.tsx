@@ -21,10 +21,10 @@ import { useDevice, useSent } from './use-network'
 type Phase = 'loading' | 'email' | 'code' | 'form'
 const NO_DEVICES: MyDevice[] = []
 
-const HINT_NO_CODE = 'Na tenhle e-mail kód nepřijde.'
-const HINT_NOT_MEMBER = 'Tenhle e-mail nemá pozvánku.'
-const HINT_BAD_EMAIL = 'Zkontroluj e-mail.'
-const HINT_BAD_CODE = 'Kód nesedí.'
+const HINT_NO_CODE = "Couldn't send a code to this email."
+const HINT_NOT_MEMBER = 'This email has no invite.'
+const HINT_BAD_EMAIL = 'Check the email.'
+const HINT_BAD_CODE = "That code doesn't match."
 
 /**
  * The one screen. Sign-in states first; signed in, "home" shows the form and the sent list,
@@ -258,7 +258,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   )
 }
 
-export const ADD_CONTACT = 'Přidat do kontaktů?'
+export const ADD_CONTACT = (name: string) => `Add ${name} to your contacts?`
 
 /**
  * Someone's invite reached a person who is already a member. Nothing happens until they answer:
@@ -278,19 +278,19 @@ export function ContactRequest({ name, onAnswer }: { name: string; onAnswer: (ye
     }
   }
   return (
-    <div className="dv-new" role="group" aria-label={`${ADD_CONTACT} ${name}`}>
+    <div className="dv-new" role="group" aria-label={ADD_CONTACT(name)}>
       <span className="dv-new-i">
         <Icon name="user" size={18} />
       </span>
       <p className="dv-new-t">
-        <span>{ADD_CONTACT}</span> <b>{name}</b>
+        <span>Add</span> <b>{name}</b> <span>to your contacts?</span>
       </p>
       <span className="dv-new-a">
         <button type="button" className="chip" onClick={() => void answer(true)} disabled={busy}>
-          Přidat
+          Add
         </button>
         <button type="button" className="chip" onClick={() => void answer(false)} disabled={busy}>
-          Ne
+          No
         </button>
       </span>
     </div>

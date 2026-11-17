@@ -84,25 +84,25 @@ describe('devices on the account', () => {
   it('lists every device; removing one that is not this browser takes two clicks', async () => {
     member([browser(), dev({ deviceId: 'mac-me', name: 'Vikin Mac' }), dev({ deviceId: 'mac-evil', name: 'MacBook Pro', createdAt: Date.now() - 20 * DAY })])
     render(<App />)
-    const toggle = await screen.findByRole('button', { name: /^Zařízení/ })
+    const toggle = await screen.findByRole('button', { name: /^Devices/ })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     // In one row with "Connect your agent"; the list opens under that row, last on the page.
     expect(toggle.closest('.cn-bar')).toContainElement(screen.getByRole('button', { name: 'Connect your agent' }))
     fireEvent.click(toggle)
-    const list = screen.getByRole('list', { name: 'Zařízení' })
+    const list = screen.getByRole('list', { name: 'Devices' })
     expect(list.parentElement?.lastElementChild).toBe(list)
     const rows = within(list).getAllByRole('listitem')
     // This browser first, then the newest, so an unknown Mac is near the top.
     expect(rows.map((r) => r.querySelector('.dv-name')?.textContent)).toEqual(['Chrome · Mac', 'MacBook Pro', 'Vikin Mac'])
     // This browser is marked and cannot remove itself from here.
-    expect(within(rows[0]).getByText('tenhle')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('this one')).toBeInTheDocument()
     expect(within(rows[0]).queryByRole('button')).toBeNull()
 
-    const remove = within(list).getByRole('button', { name: 'Odebrat MacBook Pro' })
+    const remove = within(list).getByRole('button', { name: 'Remove MacBook Pro' })
     fireEvent.click(remove)
     expect(mutation('devices:revoke')).not.toHaveBeenCalled()
-    expect(remove).toHaveAccessibleName('Potvrdit: Odebrat MacBook Pro')
-    expect(remove).toHaveTextContent('Odebrat')
+    expect(remove).toHaveAccessibleName('Confirm: Remove MacBook Pro')
+    expect(remove).toHaveTextContent('Remove')
     fireEvent.click(remove)
     await waitFor(() => expect(mutation('devices:revoke')).toHaveBeenCalledWith({ deviceId: 'mac-evil' }))
     expect(mutation('devices:revoke')).toHaveBeenCalledTimes(1)
@@ -111,28 +111,28 @@ describe('devices on the account', () => {
   it('announces a Mac that joined after this browser until it is confirmed', async () => {
     member([browser(), dev({ deviceId: 'mac-me', name: 'Vikin Mac' }), dev({ deviceId: 'mac-new', name: 'MacBook Pro', createdAt: Date.now() - HOUR })])
     const view = render(<App />)
-    const notice = await screen.findByRole('status', { name: 'Nový Mac' })
+    const notice = await screen.findByRole('status', { name: 'New Mac' })
     expect(notice).toHaveTextContent('MacBook Pro')
     // First in reading order, above the form.
     expect(view.container.querySelector('main > .dv-new')).toBe(notice)
 
-    fireEvent.click(within(notice).getByRole('button', { name: 'Je můj' }))
-    await waitFor(() => expect(screen.queryByRole('status', { name: 'Nový Mac' })).toBeNull())
+    fireEvent.click(within(notice).getByRole('button', { name: "It's mine" }))
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'New Mac' })).toBeNull())
     expect(mutation('devices:revoke')).not.toHaveBeenCalled()
     // Remembered in this browser.
     cleanup()
     render(<App />)
-    await screen.findByRole('button', { name: /^Zařízení/ })
-    expect(screen.queryByRole('status', { name: 'Nový Mac' })).toBeNull()
+    await screen.findByRole('button', { name: /^Devices/ })
+    expect(screen.queryByRole('status', { name: 'New Mac' })).toBeNull()
   })
 
   it('removes the new Mac straight from the notice', async () => {
     member([browser(), dev({ deviceId: 'mac-new', name: 'MacBook Pro', createdAt: Date.now() - HOUR })])
     render(<App />)
-    const notice = await screen.findByRole('status', { name: 'Nový Mac' })
-    fireEvent.click(within(notice).getByRole('button', { name: 'Odebrat MacBook Pro' }))
+    const notice = await screen.findByRole('status', { name: 'New Mac' })
+    fireEvent.click(within(notice).getByRole('button', { name: 'Remove MacBook Pro' }))
     await waitFor(() => expect(mutation('devices:revoke')).toHaveBeenCalledWith({ deviceId: 'mac-new' }))
-    await waitFor(() => expect(screen.queryByRole('status', { name: 'Nový Mac' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'New Mac' })).toBeNull())
   })
 
   it('only Macs newer than this browser and less than a week old are announced', () => {

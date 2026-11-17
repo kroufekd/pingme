@@ -60,19 +60,19 @@ export const send = internalAction({
     // WEB_URL = the published web app (SITE_URL points at the API host).
     const site = process.env.WEB_URL ?? process.env.SITE_URL ?? ""
     const message = [
-      `Ahoj ${name},`,
+      `Hi ${name},`,
       "",
-      "Dominik ti posílá pozvánku do pingme. Úkol, který tam zadáš, mu vyskočí na Macu a nezmizí, dokud ho neodklikne.",
+      "Dominik invited you to pingme. A ping you send there pops up on his Mac and stays until he clears it.",
       "",
-      `1. Otevři ${site}`,
-      `2. Zadej tenhle email: ${normalizeEmail(email)}`,
-      "3. Přijde ti kód, opiš ho a jsi tam.",
+      `1. Open ${site}`,
+      `2. Enter this email: ${normalizeEmail(email)}`,
+      "3. You get a code. Type it in and you are in.",
       "",
-      "Tip: v mobilu si stránku přidej na plochu (v Safari Sdílet, Přidat na plochu), ať ji máš po ruce jako appku.",
+      "Tip: on your phone, add the page to your home screen (in Safari: Share, Add to Home Screen) to keep it at hand like an app.",
     ].join("\n")
     const response = await sendEmail({
       toEmail: normalizeEmail(email),
-      subject: "Dominik tě zve do pingme",
+      subject: "Dominik invited you to pingme",
       message,
     })
     return { ok: response.ok, status: response.status }

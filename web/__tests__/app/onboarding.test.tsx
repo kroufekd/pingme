@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Onboarding, dative, introLine, needsOnboarding } from '@/components/app/onboarding'
+import { Onboarding, introLine, needsOnboarding } from '@/components/app/onboarding'
 
 // The same tiny fake of Convex as page.test.tsx: queries and mutations by function name.
 const h = vi.hoisted(() => ({
@@ -50,7 +50,7 @@ function member(onboarded: boolean | undefined, extra: { inviterName?: string; c
 /** The intro the app shows now: encrypted, naming who invited them. */
 const APP_LINE = 'This offers Pretty Good Privacy, for you, me and our agents.'
 /** The component's default (phase 1) line. */
-const LINE = 'Letí rovnou Dominikovi na Mac.'
+const LINE = "Goes straight to Dominik's Mac."
 const finished = () => mutation('senders:finishOnboarding')
 
 // jsdom has no showModal/close: the smallest stand-in that behaves like a browser (close fires later, as a task).
@@ -103,14 +103,14 @@ describe('when the intro shows', () => {
     render(<App />)
     const dialog = await screen.findByRole('dialog', { name: APP_LINE })
     expect(dialog).toHaveAttribute('open')
-    expect(screen.getByRole('button', { name: 'Jasně' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Got it' })).toHaveFocus()
     expect(finished()).not.toHaveBeenCalled()
   })
 
   it('stays away once seen, from an older server without the flag, and when signed out', async () => {
     member(true)
     const view = render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     expect(view.container.querySelector('dialog')).toBeNull()
 
     member(undefined)
@@ -120,14 +120,14 @@ describe('when the intro shows', () => {
     h.auth.isAuthenticated = false
     h.queries = {}
     view.rerender(<App />)
-    await screen.findByLabelText('E-mail')
+    await screen.findByLabelText('Email')
     expect(view.container.querySelector('dialog')).toBeNull()
   })
 
   it('is encrypted, and waits until contacts are known', async () => {
     member(false, { inviterName: 'Michal', contacts: null })
     const view = render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     // No contacts yet: no dialog, so no default name flashes.
     expect(view.container.querySelector('dialog')).toBeNull()
 
@@ -152,19 +152,19 @@ describe('when the intro shows', () => {
 })
 
 describe('closing it marks the account once', () => {
-  it('"Jasně" closes it, marks once, and hands the keyboard to the title field', async () => {
+  it('"Got it" closes it, marks once, and hands the keyboard to the title field', async () => {
     member(false)
     const view = render(<App />)
     const dialog = await screen.findByRole('dialog', { name: APP_LINE })
-    fireEvent.click(screen.getByRole('button', { name: 'Jasně' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
     expect(finished()).toHaveBeenCalledTimes(1)
     expect(finished()).toHaveBeenCalledWith({})
     expect(dialog).not.toHaveAttribute('open')
-    expect(screen.getByRole('textbox', { name: 'Úkol' })).toHaveFocus()
+    expect(screen.getByRole('textbox', { name: 'Ping' })).toHaveFocus()
 
     // The browser's own close event, and a second press, change nothing.
     await act(() => new Promise((r) => setTimeout(r, 5)))
-    fireEvent.click(screen.getByRole('button', { name: 'Jasně', hidden: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Got it', hidden: true }))
     expect(finished()).toHaveBeenCalledTimes(1)
 
     // The flag still says false until the mutation lands: a re-render must not open it again.
@@ -180,7 +180,7 @@ describe('closing it marks the account once', () => {
     member(false)
     render(<App />)
     const dialog = await screen.findByRole('dialog', { name: APP_LINE })
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Jasně' }), { key: 'Escape' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Got it' }), { key: 'Escape' })
     expect(finished()).toHaveBeenCalledTimes(1)
     expect(dialog).not.toHaveAttribute('open')
 
@@ -218,17 +218,11 @@ describe('closing it marks the account once', () => {
 })
 
 describe('copy', () => {
-  it('phase 1: straight to the Mac, in Czech that declines right or not at all', () => {
+  it('phase 1: straight to the Mac, with the first name as given', () => {
     expect(introLine('Dominik', false)).toBe(LINE)
-    expect(introLine('Michal', false)).toBe('Letí rovnou Michalovi na Mac.')
-    expect(introLine('Viki', false)).toBe('Letí rovnou na Mac, Viki to uvidí hned.')
-    expect(introLine('Jiří', false)).toBe('Letí rovnou na Mac, Jiří to uvidí hned.')
-    expect(introLine('Marek', false)).toBe('Letí rovnou na Mac, Marek to uvidí hned.')
-    expect(introLine('Dominik Kroufek', false)).toBe('Letí rovnou na Mac, Dominik Kroufek to uvidí hned.')
+    expect(introLine('Michal', false)).toBe("Goes straight to Michal's Mac.")
+    expect(introLine('Dominik Kroufek', false)).toBe("Goes straight to Dominik Kroufek's Mac.")
     expect(introLine('  ', false)).toBe(LINE)
-    expect(dative('Tomáš')).toBe('Tomášovi')
-    expect(dative('Pavel')).toBeNull()
-    expect(dative('R2')).toBeNull()
   })
 
   it('encrypted: its own line and a lock on the ping and on the island', () => {

@@ -16,7 +16,7 @@ export const DAY = 24 * HOUR
 export const DONE_TTL = DAY
 export const STATUS_TTL = 7 * DAY
 export const INVITE_TTL = 7 * DAY
-/** "Píše" lasts this long after the Mac reports typing. */
+/** "Typing" lasts this long after the Mac reports typing. */
 export const TYPING_TTL = 6_000
 
 export function normalizeEmail(email: string) {

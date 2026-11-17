@@ -80,7 +80,7 @@ export function ConnectAgent({ side, below }: { side?: ReactNode; below?: ReactN
           {AGENT_PROMPT}
         </p>
         <div className="cn-row">
-          <button type="button" className={copied ? 'chip cn-c ok' : 'chip cn-c'} onClick={() => void copy()} aria-label={copied ? 'Zkopírováno' : 'Zkopírovat'} title={copied ? 'Zkopírováno' : 'Zkopírovat'}>
+          <button type="button" className={copied ? 'chip cn-c ok' : 'chip cn-c'} onClick={() => void copy()} aria-label={copied ? 'Copied' : 'Copy'} title={copied ? 'Copied' : 'Copy'}>
             <Icon name={copied ? 'check' : 'copy'} size={16} />
           </button>
           <a className="chip cn-l" href={REPO_URL} target="_blank" rel="noreferrer">
@@ -89,7 +89,7 @@ export function ConnectAgent({ side, below }: { side?: ReactNode; below?: ReactN
           </a>
         </div>
         <span className="vh" role="status" aria-live="polite">
-          {copied ? 'Zkopírováno' : ''}
+          {copied ? 'Copied' : ''}
         </span>
       </div>
       {below}

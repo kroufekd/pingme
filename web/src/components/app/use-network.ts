@@ -169,7 +169,7 @@ export function useSent({
     },
     [view],
   )
-  // Unknown (contacts still loading) is not offline: no "čeká" flash.
+  // Unknown (contacts still loading) is not offline: no "waiting" flash.
   const offline = (userId: string) => {
     const seen = lastSeenOf(userId)
     return seen !== undefined && !isOnline(seen, now)

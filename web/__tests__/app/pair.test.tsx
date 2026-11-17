@@ -43,7 +43,7 @@ const CODE = '309365'
 
 /** The six digits from the Mac's island, typed (or pasted with a space) into the field. */
 async function typeCode(value = '309 365') {
-  fireEvent.change(await screen.findByRole('textbox', { name: 'Kód z Macu' }), { target: { value } })
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Code from your Mac' }), { target: { value } })
 }
 
 function mutation(name: string) {
@@ -78,12 +78,12 @@ afterEach(() => cleanup())
 describe('/pair', () => {
   it('signed out: the normal sign-in first, then the pairing, on the same page', async () => {
     const view = render(<App view="pair" />)
-    const email = await screen.findByLabelText('E-mail')
+    const email = await screen.findByLabelText('Email')
     expect(email.closest('form')).toHaveClass('on')
     expect(calls('devices:pairing')).toHaveLength(0)
 
     fireEvent.change(email, { target: { value: 'michal@example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat kód' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send code' }))
     await waitFor(() => expect(h.signIn).toHaveBeenCalledWith('resend-otp', { email: 'michal@example.com' }))
 
     // Signed in: the address still carries the link, the page asks with the hash only.
@@ -94,7 +94,7 @@ describe('/pair', () => {
     expect(calls('devices:pairing').at(-1)).toEqual({ pairId: PAIR_ID, secretHash: HASH })
     expect(JSON.stringify(h.queryArgs)).not.toContain(SECRET)
     // Only the pairing: no form, no device key, no contacts on this page.
-    expect(screen.queryByRole('textbox', { name: 'Úkol' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Ping' })).toBeNull()
     expect(calls('contacts:list')).toHaveLength(0)
     expect(mutation('devices:registerWeb')).not.toHaveBeenCalled()
   })
@@ -104,20 +104,20 @@ describe('/pair', () => {
     h.queries['devices:pairing'] = { status: 'pending', name: 'MacBook Michala', expiresAt: Date.now() + 600_000 }
     h.results['devices:approvePairing'] = { ok: true }
     const view = render(<App view="pair" />)
-    const button = await screen.findByRole('button', { name: 'Připojit tento Mac' })
+    const button = await screen.findByRole('button', { name: 'Connect this Mac' })
     expect(screen.getAllByRole('button').filter((b) => !b.closest('[inert]'))).toHaveLength(1)
     // The field takes the keyboard, and the page warns against a code that is not on your Mac.
-    const field = screen.getByRole('textbox', { name: 'Kód z Macu' })
+    const field = screen.getByRole('textbox', { name: 'Code from your Mac' })
     await waitFor(() => expect(field).toHaveFocus())
-    expect(screen.getByText('Nevidíš kód na svém Macu? Nepřipojuj.')).toBeInTheDocument()
+    expect(screen.getByText("Don't see this code on your Mac? Don't connect.")).toBeInTheDocument()
 
     await typeCode()
     expect(field).toHaveValue(CODE)
     fireEvent.click(button)
     await waitFor(() => expect(mutation('devices:approvePairing')).toHaveBeenCalledWith({ pairId: PAIR_ID, secretHash: HASH, code: CODE }))
-    expect(await screen.findByText('Připojeno')).toBeInTheDocument()
+    expect(await screen.findByText('Connected')).toBeInTheDocument()
     expect(screen.getByText('MacBook Michala')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Připojit tento Mac' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Connect this Mac' })).toBeNull()
     // The secret leaves the address bar.
     expect(window.location.hash).toBe('')
 
@@ -125,8 +125,8 @@ describe('/pair', () => {
     const before = calls('devices:pairing').length
     h.queries['devices:pairing'] = { status: 'invalid' }
     view.rerender(<App view="pair" />)
-    expect(screen.getByText('Připojeno')).toBeInTheDocument()
-    expect(screen.queryByText('Odkaz už neplatí.')).toBeNull()
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+    expect(screen.queryByText('This link has expired.')).toBeNull()
     expect(calls('devices:pairing')).toHaveLength(before)
     expect(mutation('devices:approvePairing')).toHaveBeenCalledTimes(1)
 
@@ -139,8 +139,8 @@ describe('/pair', () => {
       window.dispatchEvent(new HashChangeEvent('hashchange'))
     })
     expect(await screen.findByText('iMac Viki')).toBeInTheDocument()
-    expect(screen.queryByText('Připojeno')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Připojit tento Mac' })).toBeInTheDocument()
+    expect(screen.queryByText('Connected')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeInTheDocument()
     await waitFor(() => expect(calls('devices:pairing').at(-1)).toEqual({ pairId: pairId2, secretHash: hash2 }))
   })
 
@@ -148,15 +148,15 @@ describe('/pair', () => {
     member()
     h.queries['devices:pairing'] = { status: 'approved' }
     render(<App view="pair" />)
-    expect(await screen.findByText('Připojeno')).toBeInTheDocument()
+    expect(await screen.findByText('Connected')).toBeInTheDocument()
   })
 
   it('an expired, used or foreign request says the link is dead', async () => {
     member()
     h.queries['devices:pairing'] = { status: 'invalid' }
     render(<App view="pair" />)
-    expect(await screen.findByText('Odkaz už neplatí.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Připojit tento Mac' })).toBeNull()
+    expect(await screen.findByText('This link has expired.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Connect this Mac' })).toBeNull()
   })
 
   it('a refused approval says the link is dead too', async () => {
@@ -165,8 +165,8 @@ describe('/pair', () => {
     h.results['devices:approvePairing'] = { ok: false, error: 'invalid' }
     render(<App view="pair" />)
     await typeCode()
-    fireEvent.click(await screen.findByRole('button', { name: 'Připojit tento Mac' }))
-    expect(await screen.findByText('Odkaz už neplatí.')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect this Mac' }))
+    expect(await screen.findByText('This link has expired.')).toBeInTheDocument()
   })
 
   it('without the code nothing is sent; a wrong code says so and clears the field', async () => {
@@ -174,22 +174,22 @@ describe('/pair', () => {
     h.queries['devices:pairing'] = { status: 'pending', name: 'MacBook Pro', expiresAt: Date.now() + 600_000 }
     h.results['devices:approvePairing'] = { ok: false, error: 'bad-code' }
     render(<App view="pair" />)
-    const button = await screen.findByRole('button', { name: 'Připojit tento Mac' })
+    const button = await screen.findByRole('button', { name: 'Connect this Mac' })
     fireEvent.click(button)
-    expect(await screen.findByText('Kód má 6 číslic.')).toBeInTheDocument()
+    expect(await screen.findByText('The code has 6 digits.')).toBeInTheDocument()
     expect(mutation('devices:approvePairing')).not.toHaveBeenCalled()
 
     await typeCode('123456')
     fireEvent.click(button)
-    expect(await screen.findByText('Kód nesedí.')).toBeInTheDocument()
+    expect(await screen.findByText("That code doesn't match.")).toBeInTheDocument()
     expect(mutation('devices:approvePairing')).toHaveBeenCalledWith({ pairId: PAIR_ID, secretHash: HASH, code: '123456' })
-    const field = screen.getByRole('textbox', { name: 'Kód z Macu' })
+    const field = screen.getByRole('textbox', { name: 'Code from your Mac' })
     expect(field).toHaveValue('')
     expect(field).toHaveAttribute('aria-invalid', 'true')
     expect(field).toHaveFocus()
     // Still pending: the person can type the right code.
-    expect(screen.getByRole('button', { name: 'Připojit tento Mac' })).not.toBeDisabled()
-    expect(screen.queryByText('Připojeno')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).not.toBeDisabled()
+    expect(screen.queryByText('Connected')).toBeNull()
   })
 
   it('a network error keeps the button and asks to try again', async () => {
@@ -200,16 +200,16 @@ describe('/pair', () => {
     })
     render(<App view="pair" />)
     await typeCode()
-    fireEvent.click(await screen.findByRole('button', { name: 'Připojit tento Mac' }))
-    expect(await screen.findByText('Nepovedlo se. Zkus to znovu.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Připojit tento Mac' })).not.toBeDisabled()
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect this Mac' }))
+    expect(await screen.findByText("That didn't work. Try again.")).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).not.toBeDisabled()
   })
 
   it('a malformed link never reaches the server', async () => {
     member()
     window.history.replaceState(null, '', '/pair#nope.short')
     render(<App view="pair" />)
-    expect(await screen.findByText('Odkaz už neplatí.')).toBeInTheDocument()
+    expect(await screen.findByText('This link has expired.')).toBeInTheDocument()
     await act(() => new Promise((r) => setTimeout(r, 10)))
     expect(calls('devices:pairing')).toHaveLength(0)
   })

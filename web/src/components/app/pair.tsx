@@ -6,14 +6,14 @@ import { CODE_LENGTH, CODE_SHORT, cleanCode } from '@/lib/validate'
 import { Icon } from './icon'
 import { useNudge } from './sign-in'
 
-export const PAIR_TITLE = 'Připojit tento Mac'
-export const PAIR_CODE = 'Kód z Macu'
+export const PAIR_TITLE = 'Connect this Mac'
+export const PAIR_CODE = 'Code from your Mac'
 // A link and a code from a message are how someone else's Mac gets onto your account.
-export const PAIR_WARN = 'Nevidíš kód na svém Macu? Nepřipojuj.'
-const DONE = 'Připojeno'
-const INVALID = 'Odkaz už neplatí.'
-const FAILED = 'Nepovedlo se. Zkus to znovu.'
-const BAD_CODE = 'Kód nesedí.'
+export const PAIR_WARN = "Don't see this code on your Mac? Don't connect."
+const DONE = 'Connected'
+const INVALID = 'This link has expired.'
+const FAILED = "That didn't work. Try again."
+const BAD_CODE = "That code doesn't match."
 
 type Target = { pairId: string; secretHash: string }
 type Pairing = { status: 'signedOut' } | { status: 'notMember' } | { status: 'invalid' } | { status: 'pending'; name: string; expiresAt: number } | { status: 'approved' }
@@ -179,7 +179,7 @@ export function PairPanel({ on }: { on: boolean }) {
               <p className="pp-done" role="status">
                 {DONE}
               </p>
-              <a className="pp-home" href="/" aria-label="Zpět na pingme" title="pingme">
+              <a className="pp-home" href="/" aria-label="Back to pingme" title="pingme">
                 <Icon name="arrow-left" size={16} />
                 <span>pingme</span>
               </a>

@@ -26,14 +26,14 @@ export const ResendOTP = Email({
     }
     const appName = "pingme";
     const localizedCopy = {
-      language: "cs",
-      customMessage: `Tvůj kód pro přihlášení do pingme: ${token}`,
+      language: "en",
+      customMessage: `Your pingme sign-in code: ${token}`,
       emailCopy: {
-        subject: `${token} je tvůj kód do pingme`,
-        preview: "Přihlášení do pingme",
-        heading: "Tvůj přihlašovací kód",
-        security: "Kód nikomu neposílej.",
-        footer: "Pokud jsi o kód nežádal(a), tenhle email klidně ignoruj.",
+        subject: `${token} is your pingme code`,
+        preview: "Sign in to pingme",
+        heading: "Your sign-in code",
+        security: "Never share this code.",
+        footer: "If you did not ask for this code, you can ignore this email.",
       },
     };
     const response = await fetch(`${process.env.OTP_ENDPOINT}`, {

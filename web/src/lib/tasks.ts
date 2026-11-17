@@ -17,7 +17,7 @@ export type Row = {
   to?: Recipient
   /** Who it went to, shown once there is more than one contact. */
   toName?: string
-  /** The recipient's Mac is not running: a queued ping shows "čeká". */
+  /** The recipient's Mac is not running: a queued ping shows "waiting". */
   offline?: boolean
   dueAt: number | null
   repeat?: Repeat
@@ -40,9 +40,9 @@ export type Me =
   | { status: 'member'; name: string; userId: string; senderId?: string; onboarded?: boolean; inviterName?: string }
 
 export const URGENCIES: { value: Urgency; word: string; cls: string }[] = [
-  { value: 'green', word: 'Počká', cls: 'u-g' },
-  { value: 'orange', word: 'Brzy', cls: 'u-o' },
-  { value: 'red', word: 'Hned', cls: 'u-r' },
+  { value: 'green', word: 'Can wait', cls: 'u-g' },
+  { value: 'orange', word: 'Soon', cls: 'u-o' },
+  { value: 'red', word: 'Now', cls: 'u-r' },
 ]
 
 export function urgencyOf(u: Urgency) {
@@ -50,12 +50,12 @@ export function urgencyOf(u: Urgency) {
 }
 
 export const REPEAT_OPTIONS: { value: Repeat | ''; label: string }[] = [
-  { value: '', label: 'Jednou' },
-  { value: 'daily', label: 'Každý den' },
-  { value: 'weekdays', label: 'Pracovní dny' },
-  { value: 'weekly', label: 'Každý týden' },
-  { value: 'biweekly', label: 'Po 14 dnech' },
-  { value: 'monthly', label: 'Každý měsíc' },
+  { value: '', label: 'Once' },
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekdays', label: 'Weekdays' },
+  { value: 'weekly', label: 'Every week' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Every month' },
 ]
 
 /** What the status cell shows. "typing" is not a server status, it wins while typingUntil is ahead. */
@@ -83,19 +83,19 @@ export function kindOf(row: Pick<Row, 'status' | 'typingUntil' | 'offline'>, now
 export function wordFor(kind: Kind, row: Pick<Row, 'dueAt' | 'snoozedUntil'>, now: number) {
   switch (kind) {
     case 'queued':
-      return 'letí'
+      return 'sending'
     case 'waiting':
-      return row.dueAt === null ? 'čeká' : dueLabel(row.dueAt, now)
+      return row.dueAt === null ? 'waiting' : dueLabel(row.dueAt, now)
     case 'popped':
-      return 'vyskočilo'
+      return 'popped up'
     case 'seen':
-      return 'viděl'
+      return 'seen'
     case 'typing':
-      return 'píše'
+      return 'typing'
     case 'replied':
-      return 'odpověď'
+      return 'reply'
     case 'done':
-      return 'hotovo'
+      return 'done'
     case 'snoozed':
       return snoozeLabel(row.snoozedUntil, now)
   }
@@ -104,7 +104,7 @@ export function wordFor(kind: Kind, row: Pick<Row, 'dueAt' | 'snoozedUntil'>, no
 /** Full text for screen readers, where the visible word alone is a bare time. */
 export function spokenFor(kind: Kind, row: Pick<Row, 'dueAt' | 'snoozedUntil'>, now: number) {
   const word = wordFor(kind, row, now)
-  if (kind === 'waiting' && row.dueAt !== null) return `čeká, ${word}`
-  if (kind === 'snoozed') return `odloženo, ${word}`
+  if (kind === 'waiting' && row.dueAt !== null) return `waiting, ${word}`
+  if (kind === 'snoozed') return `snoozed, ${word}`
   return word
 }

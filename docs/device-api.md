@@ -120,7 +120,7 @@ A browser that lost its key makes a new pair and registers again.
 ### `devices.revoke` (mutation) `{ deviceId: string }` -> `boolean`
 
 Revokes one of your own devices (web or Mac). False for anything else. The web lists every device
-from `contacts.list` `me.devices` ("Zařízení") with a remove button, and shows "Nový Mac" at the
+from `contacts.list` `me.devices` ("Devices") with a remove button, and shows "New Mac" at the
 top while a Mac created after this browser (and less than 7 days ago) is not confirmed there.
 
 ### `contacts.list` (query) `{}`
@@ -201,7 +201,7 @@ type SentRow = {
   status: "queued" | "waiting" | "popped" | "seen" | "replied" | "done" | "snoozed"
   statusAt: number
   snoozedUntil: number | null // only while snoozed
-  typingUntil: number | null  // "píše" while typingUntil > now
+  typingUntil: number | null  // "typing" while typingUntil > now
   title: { enc: string; ct: string } | null // your device's copy, kind "title"
   reply: { enc: string; ct: string } | null // your device's copy, kind "reply"
   replyAt: number | null      // set once a reply exists, even when this device has no copy
@@ -211,7 +211,7 @@ type SentRow = {
 Pass this browser's `deviceId`. Only that device's envelopes come back. `deviceActive: false`
 means the device is unknown, someone else's or revoked: call `registerWeb` again. `title: null`
 or (`replyAt` set and `reply: null`) means the text was sealed for another device
-("Odpověď je na jiném zařízení."). Done rows disappear 24 hours after done; any row 7 days after
+("Reply is on another device."). Done rows disappear 24 hours after done; any row 7 days after
 its last change.
 
 ### `messages.ackReply` (mutation) `{ ref: string, deviceId: string }` -> `boolean`
@@ -224,7 +224,7 @@ the decrypted text locally if you want to show it again.
 The fragment never reaches the server. The page computes `secretHash` from `secret`, then asks
 for the [pairing code](#pairing-code) the Mac shows. A link alone is not enough: someone can
 send you a `/pair` link for their own Mac, and approving it would let that Mac read every ping
-to you. The page says so in one line: "Nevidíš kód na svém Macu? Nepřipojuj."
+to you. The page says so in one line: "Don't see this code on your Mac? Don't connect."
 
 `devices.pairing` (query) `{ pairId, secretHash }`
 
@@ -232,7 +232,7 @@ to you. The page says so in one line: "Nevidíš kód na svém Macu? Nepřipojuj
 | { status: "signedOut" }
 | { status: "notMember" }
 | { status: "invalid" }                                  // unknown, wrong hash, expired, or another account took it
-| { status: "pending"; name: string; expiresAt: number } // show "Připojit tento Mac" with the Mac's name
+| { status: "pending"; name: string; expiresAt: number } // show "Connect this Mac" with the Mac's name
 | { status: "approved" }                                 // this account already approved it
 ```
 
@@ -279,7 +279,7 @@ Joining (same flow as phase 1):
   `{ ok: true; name: string } | { ok: false; error: "confirm"; inviterName: string } | { ok: false; error: "bad-link" | "wrong-email" | "signed-out" }`.
   Claiming makes the person a member and a contact of the inviter, both ways. Someone who is already
   a member gets `confirm` first (anyone who knows their email could otherwise add themselves with a
-  link); the web asks "Přidat do kontaktů? <inviterName>" and claims again with `addContact: true`.
+  link); the web asks "Add <inviterName> to your contacts?" and claims again with `addContact: true`.
 - `contacts.remove` (mutation) `{ userId }` -> `{ ok: true } | { ok: false; error: "not-member" | "not-contact" }`.
   Ends a contact both ways; either side may do it.
 - `invites.check` (query) `{ email }` -> `boolean`. The owner (env `OWNER_EMAIL`) is always allowed.
@@ -313,8 +313,8 @@ Joining (same flow as phase 1):
    - `429 rate-limited`: more than 60 claims a minute for this request. Keep polling at 2 s.
    - `404 { "ok": false, "error": "not-found" }`: unknown, wrong secret, expired, too many wrong
      codes, or the device was removed in the meantime. Stop and start over. A `404` after the
-     page said "Připojeno" is not normal: say the pairing was cancelled and ask the person to
-     check "Zařízení" on the web.
+     page said "Connected" is not normal: say the pairing was cancelled and ask the person to
+     check "Devices" on the web.
    - `400 bad-request`: malformed body.
 
    At most 10 active Macs per account: a new one revokes the least recently seen one.
@@ -337,7 +337,7 @@ Server: `pairCode` in `web/convex/network.ts`.
 
 The code proves the person approving sees the Mac that asked. It does not stop someone who
 starts a pairing on their own Mac and then talks you into typing its code; that is why every
-device is listed with a remove button (web "Zařízení", `POST /device/devices/revoke` for the
+device is listed with a remove button (web "Devices", `POST /device/devices/revoke` for the
 Mac) and a new Mac is announced on the person's other devices.
 
 ## Mac: device API
@@ -345,7 +345,7 @@ Mac) and a new Mac is announced on the person's other devices.
 Every call below needs `Authorization: Device <token>`. A missing, unknown or revoked token is
 `401 { "ok": false, "error": "unauthorized" }`. A missing or malformed header is refused before
 the body is read; an unknown or revoked token is found inside the call, so a malformed body may
-answer 400 first. On 401 the Mac drops the token and shows "Připojit tento Mac".
+answer 400 first. On 401 the Mac drops the token and shows "Connect this Mac".
 
 ### `GET /device/me`
 
@@ -503,12 +503,12 @@ Errors: `400 bad-name`, `429 too-many-invites | rate-limited`.
 Removes one of your person's devices (web or Mac, this one included), listed in
 `GET /device/contacts` under `me.devices`. `200 { "ok": true }`, `404 not-found` (not yours or
 already removed), `400 bad-request`. The Mac should show its person's devices with this, and a
-"Nový Mac" notice for a Mac in `me.devices` whose `createdAt` is newer than its own.
+"New Mac" notice for a Mac in `me.devices` whose `createdAt` is newer than its own.
 
 ### `POST /device/contacts/remove` `{ "userId": "..." }`
 
 Ends a contact both ways, so neither can ping the other. `200 { "ok": true }`, `404 not-found` (not a
-contact), `400 bad-request`. The Mac offers it under a contact's key fingerprints in Lidé.
+contact), `400 bad-request`. The Mac offers it under a contact's key fingerprints in Contacts.
 
 ## Errors
 

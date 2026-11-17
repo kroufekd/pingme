@@ -7,11 +7,11 @@ export type EmailError = 'empty' | 'space' | 'no-at' | 'no-domain' | 'bad'
 export type EmailCheck = { ok: true; value: string } | { ok: false; error: EmailError }
 
 export const EMAIL_NOTES: Record<EmailError, string> = {
-  empty: 'Napiš e-mail.',
-  space: 'E-mail nemá mezery.',
-  'no-at': 'Chybí zavináč.',
-  'no-domain': 'Chybí doména.',
-  bad: 'Zkontroluj e-mail.',
+  empty: 'Enter your email.',
+  space: 'No spaces in an email.',
+  'no-at': 'Missing the @.',
+  'no-domain': 'Missing the domain.',
+  bad: 'Check the email.',
 }
 
 /** Structure only: something@domain.tld without spaces. Plus signs, long TLDs and accents pass. */
@@ -78,7 +78,7 @@ export function suggestEmail(raw: string): string | null {
 }
 
 export const CODE_LENGTH = 6
-export const CODE_SHORT = `Kód má ${CODE_LENGTH} číslic.`
+export const CODE_SHORT = `The code has ${CODE_LENGTH} digits.`
 
 /** Digits only, cut to the code length. A pasted "419 275" or "419-275" becomes the whole code. */
 export function cleanCode(raw: string) {

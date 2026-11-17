@@ -9,28 +9,28 @@ const row = { dueAt: null, snoozedUntil: undefined }
 
 describe('status words', () => {
   it('maps every server status to its word', () => {
-    expect(wordFor('queued', row, NOW)).toBe('letí')
-    expect(wordFor('popped', row, NOW)).toBe('vyskočilo')
-    expect(wordFor('seen', row, NOW)).toBe('viděl')
-    expect(wordFor('typing', row, NOW)).toBe('píše')
-    expect(wordFor('replied', row, NOW)).toBe('odpověď')
-    expect(wordFor('done', row, NOW)).toBe('hotovo')
+    expect(wordFor('queued', row, NOW)).toBe('sending')
+    expect(wordFor('popped', row, NOW)).toBe('popped up')
+    expect(wordFor('seen', row, NOW)).toBe('seen')
+    expect(wordFor('typing', row, NOW)).toBe('typing')
+    expect(wordFor('replied', row, NOW)).toBe('reply')
+    expect(wordFor('done', row, NOW)).toBe('done')
   })
 
   it('shows when a waiting task pops up', () => {
-    expect(wordFor('waiting', { ...row, dueAt: at(17, 18, 0) }, NOW)).toBe('zítra 18:00')
-    expect(wordFor('waiting', { ...row, dueAt: at(18, 18, 0) }, NOW)).toBe('st 18:00')
-    expect(wordFor('waiting', row, NOW)).toBe('čeká')
-    expect(spokenFor('waiting', { ...row, dueAt: at(19, 18, 0) }, NOW)).toBe('čeká, čt 18:00')
+    expect(wordFor('waiting', { ...row, dueAt: at(17, 18, 0) }, NOW)).toBe('tomorrow 18:00')
+    expect(wordFor('waiting', { ...row, dueAt: at(18, 18, 0) }, NOW)).toBe('Wed 18:00')
+    expect(wordFor('waiting', row, NOW)).toBe('waiting')
+    expect(spokenFor('waiting', { ...row, dueAt: at(19, 18, 0) }, NOW)).toBe('waiting, Thu 18:00')
   })
 
   it('shows a snooze as minutes left or as a time', () => {
-    expect(wordFor('snoozed', { ...row, snoozedUntil: NOW + 10 * 60_000 }, NOW)).toBe('za 10 min')
-    expect(wordFor('snoozed', { ...row, snoozedUntil: at(16, 16, 12) }, NOW)).toBe('do 16:12')
-    expect(spokenFor('snoozed', { ...row, snoozedUntil: NOW + 5 * 60_000 }, NOW)).toBe('odloženo, za 5 min')
+    expect(wordFor('snoozed', { ...row, snoozedUntil: NOW + 10 * 60_000 }, NOW)).toBe('in 10 min')
+    expect(wordFor('snoozed', { ...row, snoozedUntil: at(16, 16, 12) }, NOW)).toBe('until 16:12')
+    expect(spokenFor('snoozed', { ...row, snoozedUntil: NOW + 5 * 60_000 }, NOW)).toBe('snoozed, in 5 min')
   })
 
-  it('"píše" wins while typingUntil is ahead, but never over done', () => {
+  it('"typing" wins while typingUntil is ahead, but never over done', () => {
     expect(kindOf({ status: 'seen', typingUntil: NOW + 3000 }, NOW)).toBe('typing')
     expect(kindOf({ status: 'seen', typingUntil: NOW - 1 }, NOW)).toBe('seen')
     expect(kindOf({ status: 'done', typingUntil: NOW + 3000 }, NOW)).toBe('done')
@@ -40,12 +40,12 @@ describe('status words', () => {
 describe('time labels', () => {
   it('formats due times', () => {
     expect(dueLabel(at(16, 18, 0), NOW)).toBe('18:00')
-    expect(dueLabel(at(17, 9, 30), NOW)).toBe('zítra 9:30')
-    expect(dueLabel(at(30, 9, 30), NOW)).toBe('30. 11.')
+    expect(dueLabel(at(17, 9, 30), NOW)).toBe('tomorrow 9:30')
+    expect(dueLabel(at(30, 9, 30), NOW)).toBe('30/11')
   })
 
   it('formats snoozes', () => {
-    expect(snoozeLabel(undefined, NOW)).toBe('odloženo')
-    expect(snoozeLabel(NOW + 30_000, NOW)).toBe('za 1 min')
+    expect(snoozeLabel(undefined, NOW)).toBe('snoozed')
+    expect(snoozeLabel(NOW + 30_000, NOW)).toBe('in 1 min')
   })
 })

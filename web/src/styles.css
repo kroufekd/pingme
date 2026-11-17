@@ -2086,7 +2086,7 @@ body vite-error-overlay {
     opacity: 0.7;
   }
 
-  /* ---- "Nový Mac": above the form, in the empty top of the screen, so nothing moves ---- */
+  /* ---- "New Mac": above the form, in the empty top of the screen, so nothing moves ---- */
   .dv-new {
     position: absolute;
     top: max(16px, env(safe-area-inset-top));

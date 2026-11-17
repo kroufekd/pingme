@@ -4,11 +4,11 @@ import { api } from '@/lib/api'
 import type { MyDevice } from '@/lib/network'
 import { Icon } from './icon'
 
-export const DEVICES = 'Zařízení'
-export const REMOVE = 'Odebrat'
-export const NEW_MAC = 'Nový Mac'
-export const MINE = 'Je můj'
-const THIS = 'tenhle'
+export const DEVICES = 'Devices'
+export const REMOVE = 'Remove'
+export const NEW_MAC = 'New Mac'
+export const MINE = "It's mine"
+const THIS = 'this one'
 const SEEN_KEY = 'pingme:seen-macs'
 const ARM_MS = 4000
 /** A Mac that joined in the last week is announced on the browsers that were there before it. */
@@ -42,9 +42,9 @@ function saveSeen(seen: Set<string>) {
   }
 }
 
-const day = (ms: number) => new Date(ms).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' })
+const day = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'numeric' })
 
-/** "Nový Mac" at the top of the page, until the person says it is theirs or removes it. */
+/** "New Mac" at the top of the page, until the person says it is theirs or removes it. */
 export function NewMacNotice({ devices, thisId, now }: { devices: MyDevice[]; thisId: string | null; now: number }) {
   const revoke = useMutation(api.devices.revoke)
   // Read after mount: the server render has no storage.
@@ -190,7 +190,7 @@ export function useDeviceList(devices: MyDevice[], thisId: string | null) {
                   className={on ? 'chip dv-rm on' : 'chip dv-rm'}
                   onClick={() => void remove(d)}
                   disabled={busy}
-                  aria-label={on ? `Potvrdit: ${REMOVE} ${d.name}` : `${REMOVE} ${d.name}`}
+                  aria-label={on ? `Confirm: ${REMOVE} ${d.name}` : `${REMOVE} ${d.name}`}
                   title={REMOVE}
                 >
                   {on ? <span>{REMOVE}</span> : <Icon name="x" size={16} />}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 const DAY = 86_400_000
-const DAY_SHORT = ['ne', 'po', 'út', 'st', 'čt', 'pá', 'so']
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export type Repeat = 'daily' | 'weekdays' | 'weekly' | 'biweekly' | 'monthly'
 
@@ -17,22 +17,22 @@ function startOfDay(ms: number) {
   return d.getTime()
 }
 
-/** When a planned task pops up: "18:00" today, "zítra 9:30", "út 18:00" this week, "24. 11." later. */
+/** When a planned task pops up: "18:00" today, "tomorrow 9:30", "Tue 18:00" this week, "24/11" later. */
 export function dueLabel(ms: number, now: number) {
   const days = Math.round((startOfDay(ms) - startOfDay(now)) / DAY)
   if (days === 0) return clock(ms)
-  if (days === 1) return `zítra ${clock(ms)}`
+  if (days === 1) return `tomorrow ${clock(ms)}`
   if (days > 1 && days < 7) return `${DAY_SHORT[new Date(ms).getDay()]} ${clock(ms)}`
   const d = new Date(ms)
-  return `${d.getDate()}. ${d.getMonth() + 1}.`
+  return `${d.getDate()}/${d.getMonth() + 1}`
 }
 
-/** A snoozed task: "za 10 min" while it is close, "do 14:12" otherwise. */
+/** A snoozed task: "in 10 min" while it is close, "until 14:12" otherwise. */
 export function snoozeLabel(until: number | undefined, now: number) {
-  if (until === undefined) return 'odloženo'
+  if (until === undefined) return 'snoozed'
   const minutes = Math.ceil((until - now) / 60_000)
-  if (minutes >= 1 && minutes <= 60) return `za ${minutes} min`
-  return `do ${clock(until)}`
+  if (minutes >= 1 && minutes <= 60) return `in ${minutes} min`
+  return `until ${clock(until)}`
 }
 
 /** Local day as "YYYY-MM-DD", the value of a date input. */
@@ -56,7 +56,7 @@ export function dateTime(day: string, hhmm: string) {
   return Number.isNaN(ms) ? null : ms
 }
 
-/** Default for "Později": an hour from now, on a 5 minute step. */
+/** Default for "Later": an hour from now, on a 5 minute step. */
 export function laterDefault(now: number) {
   const step = 5 * 60_000
   return Math.ceil((now + 60 * 60_000) / step) * step

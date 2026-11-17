@@ -13,7 +13,7 @@ export const repeat = v.union(
 )
 export type Repeat = Infer<typeof repeat>
 
-/** How soon the sender needs it: green = Počká, orange = Brzy, red = Hned. */
+/** How soon the sender needs it: green = Can wait, orange = Soon, red = Now. */
 export const urgency = v.union(v.literal("green"), v.literal("orange"), v.literal("red"))
 export type Urgency = Infer<typeof urgency>
 

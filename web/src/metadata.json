@@ -1,10 +1,10 @@
 {
   "default": {
     "title": "pingme",
-    "description": "Úkol, který vyskočí na Macu."
+    "description": "A ping that pops up on your Mac."
   },
   "/": {
     "title": "pingme",
-    "description": "Úkol, který vyskočí na Macu."
+    "description": "A ping that pops up on your Mac."
   }
 }

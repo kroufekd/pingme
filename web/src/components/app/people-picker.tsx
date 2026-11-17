@@ -5,7 +5,7 @@ import { Icon } from './icon'
 /** A contact as the form needs it. `online` is derived from macLastSeen on the page's own timer. */
 export type Person = { userId: string; name: string; hasMac: boolean; online: boolean }
 
-export const NO_APP = 'Nemá appku'
+export const NO_APP = 'No app yet'
 
 /** A small circle with the initials, grey without the app, a green dot while the Mac runs. */
 export function Face({ person }: { person: Person }) {
@@ -53,7 +53,7 @@ export function PeoplePicker({ people, chosen, onPick }: { people: Person[]; cho
         className="who-b"
         aria-expanded={open}
         aria-controls={id}
-        aria-label={`Komu: ${word}`}
+        aria-label={`To: ${word}`}
         title={chosen.hasMac ? chosen.name : NO_APP}
         onClick={() => setOpen((o) => !o)}
       >
@@ -73,7 +73,7 @@ export function PeoplePicker({ people, chosen, onPick }: { people: Person[]; cho
           }
         }}
       >
-        <legend className="vh">Komu</legend>
+        <legend className="vh">To</legend>
         {people.map((p) => (
           <label key={p.userId} title={p.hasMac ? p.name : NO_APP}>
             <input

@@ -18,16 +18,16 @@ export type NewTask = { title: string; urgency: Urgency; dueAt: number; repeat?:
 export type SendResult = { ok: true } | { ok: false; error: string }
 
 const NOTES: Record<string, string> = {
-  'no-time': 'Vyber den a čas.',
-  'past-time': 'Tenhle čas už byl.',
-  'bad-time': 'Tenhle čas nejde.',
+  'no-time': 'Pick a day and time.',
+  'past-time': 'That time has passed.',
+  'bad-time': "That time doesn't work.",
   'no-device': `${NO_APP}.`,
-  'rate-limited': 'Moc pingů. Zkus to za chvíli.',
+  'rate-limited': 'Too many pings. Try again in a moment.',
 }
-const FAILED = 'Neodešlo. Zkus to znovu.'
-const EMPTY = 'Napiš, co je potřeba.'
+const FAILED = "Didn't send. Try again."
+const EMPTY = 'Write what you need.'
 const AGENT = 'Agent'
-const LATER = 'Poslat později'
+const LATER = 'Send later'
 
 /** Who the form sends to when nobody was picked: the first contact that has the app. */
 function defaultPerson(people: Person[]) {
@@ -145,16 +145,16 @@ export function TaskForm({
   const cls = ['ps', 'pf', urgencyOf(urgency).cls, on ? 'on' : '', title.trim() ? 'has' : '', empty || (note && !laterBad) ? 'bad' : ''].filter(Boolean).join(' ')
 
   return (
-    <form ref={panelRef} className={cls} inert={!on} aria-hidden={!on || undefined} aria-label="Nový úkol" onSubmit={submit} noValidate>
+    <form ref={panelRef} className={cls} inert={!on} aria-hidden={!on || undefined} aria-label="New ping" onSubmit={submit} noValidate>
       <p className={left === null ? 'ps-note' : 'ps-note short'} id="u-form-note" role="status" aria-live="polite">
         {shownNote}
         {empty && !shownNote && <span className="vh">{EMPTY}</span>}
       </p>
       <span className={['ps-count', left === null ? '' : 'on', left === 0 ? 'full' : ''].filter(Boolean).join(' ')} id="u-count" aria-hidden={left === null || undefined}>
         <span aria-hidden="true">{left ?? 0}</span>
-        <span className="vh">{left === null ? '' : `Zbývá znaků: ${left}`}</span>
+        <span className="vh">{left === null ? '' : `${left} characters left`}</span>
       </span>
-      <label className="vh" htmlFor="u-title">{forAgent ? 'Zpráva pro agenta' : 'Úkol'}</label>
+      <label className="vh" htmlFor="u-title">{forAgent ? 'Message for the agent' : 'Ping'}</label>
       <div className={`line ${nudgeCls}`.trim()}>
         <input
           ref={titleRef}
@@ -162,7 +162,7 @@ export function TaskForm({
           id="u-title"
           name="title"
           type="text"
-          placeholder={forAgent ? 'Zadej práci agentovi…' : pingPlaceholder(chosen?.name)}
+          placeholder={forAgent ? 'Give the agent a job…' : pingPlaceholder(chosen?.name)}
           autoComplete="off"
           enterKeyHint="send"
           maxLength={MAX_TITLE}
@@ -175,7 +175,7 @@ export function TaskForm({
           aria-invalid={empty || undefined}
           aria-describedby={left === null ? 'u-form-note' : 'u-form-note u-count'}
         />
-        <button type="submit" className="go" aria-label="Poslat" title={blocked && chosen ? NO_APP : 'Poslat'} aria-disabled={blocked || undefined}>
+        <button type="submit" className="go" aria-label="Send" title={blocked && chosen ? NO_APP : 'Send'} aria-disabled={blocked || undefined}>
           <span key={flown} className={flown ? 'go-i fly' : 'go-i'}>
             <Icon name="send" size={20} />
           </span>
@@ -210,13 +210,13 @@ export function TaskForm({
           </>
         ) : (
           <fieldset className="tos" data-to={forAgent ? 'agent' : 'person'}>
-            <legend className="vh">Pro koho</legend>
+            <legend className="vh">To</legend>
             <label title={!chosen ? undefined : chosen.hasMac ? chosen.name : NO_APP} className={chosen && !chosen.hasMac ? 'nomac' : undefined}>
               <input
                 type="radio"
                 name="to"
                 value="person"
-                aria-label={chosen ? (chosen.hasMac ? chosen.name : `${chosen.name}, ${NO_APP.toLowerCase()}`) : 'Člověk'}
+                aria-label={chosen ? (chosen.hasMac ? chosen.name : `${chosen.name}, ${NO_APP.toLowerCase()}`) : 'Person'}
                 checked={!forAgent}
                 onChange={() => {
                   setForAgent(false)
@@ -248,7 +248,7 @@ export function TaskForm({
           </fieldset>
         )}
         <fieldset className="urgs">
-          <legend className="vh">Jak moc to spěchá</legend>
+          <legend className="vh">How urgent</legend>
           {URGENCIES.map((u) => (
             <label key={u.value} className={u.cls} title={u.word}>
               <input type="radio" name="urgency" value={u.value} aria-label={u.word} checked={urgency === u.value} onChange={() => setUrgency(u.value)} />
@@ -275,8 +275,8 @@ export function TaskForm({
         <input
           className="chip"
           type="date"
-          aria-label="Den"
-          title="Den"
+          aria-label="Day"
+          title="Day"
           aria-invalid={laterBad ? true : undefined}
           aria-describedby={laterBad ? 'u-form-note' : undefined}
           min={later ? dayKey(today) : undefined}
@@ -290,8 +290,8 @@ export function TaskForm({
         <input
           className="chip"
           type="time"
-          aria-label="Čas"
-          title="Čas"
+          aria-label="Time"
+          title="Time"
           aria-invalid={laterBad ? true : undefined}
           aria-describedby={laterBad ? 'u-form-note' : undefined}
           value={time}
@@ -300,10 +300,10 @@ export function TaskForm({
             setNote(null)
           }}
         />
-        <label className={repeat ? 'chip rep set' : 'chip rep'} title="Opakování">
+        <label className={repeat ? 'chip rep set' : 'chip rep'} title="Repeat">
           <Icon name="repeat" size={16} />
           {repeatWord && <span aria-hidden="true">{repeatWord}</span>}
-          <select aria-label="Opakování" value={repeat} onChange={(e) => setRepeat(e.target.value as Repeat | '')}>
+          <select aria-label="Repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as Repeat | '')}>
             {REPEAT_OPTIONS.map((r) => (
               <option key={r.value || 'once'} value={r.value}>
                 {r.label}

@@ -87,11 +87,11 @@ export function EmailPanel({
 
   const cls = ['ps', on ? 'on' : '', email.trim() ? 'has' : '', note ? 'bad' : ''].filter(Boolean).join(' ')
   return (
-    <form className={cls} inert={!on} aria-hidden={!on || undefined} aria-label="Přihlášení e-mailem" onSubmit={submit} noValidate>
+    <form className={cls} inert={!on} aria-hidden={!on || undefined} aria-label="Sign in with email" onSubmit={submit} noValidate>
       <p className="ps-note" id="u-mail-hint" role="status" aria-live="polite">
         {note}
       </p>
-      <label className="vh" htmlFor="u-mail">E-mail</label>
+      <label className="vh" htmlFor="u-mail">Email</label>
       <div className={`line ${nudgeCls}`.trim()}>
         <input
           ref={inputRef}
@@ -103,7 +103,7 @@ export function EmailPanel({
           autoComplete="email"
           autoCapitalize="none"
           spellCheck={false}
-          placeholder="E-mail"
+          placeholder="Email"
           maxLength={200}
           value={email}
           onChange={(e) => {
@@ -114,11 +114,11 @@ export function EmailPanel({
           aria-invalid={error ? true : undefined}
           aria-describedby="u-mail-hint"
         />
-        <GoButton busy={busy} label="Poslat kód" />
+        <GoButton busy={busy} label="Send code" />
       </div>
       <div className="tools">
         {fix && (
-          <button type="button" className="ps-fix" onClick={() => takeFix(fix)} disabled={busy} aria-label={`Opravit na ${fix}`} title="Opravit">
+          <button type="button" className="ps-fix" onClick={() => takeFix(fix)} disabled={busy} aria-label={`Fix to ${fix}`} title="Fix">
             <Icon name="check" size={16} />
             <span aria-hidden="true">{fix}</span>
           </button>
@@ -200,7 +200,7 @@ export function CodePanel({
       className={cls}
       inert={!on}
       aria-hidden={!on || undefined}
-      aria-label="Kód z e-mailu"
+      aria-label="Code from the email"
       noValidate
       onSubmit={(e) => {
         e.preventDefault()
@@ -219,15 +219,15 @@ export function CodePanel({
           type="text"
           inputMode="numeric"
           autoComplete="one-time-code"
-          placeholder="Kód z e-mailu"
+          placeholder="Code from the email"
           value={code}
           onChange={(e) => change(e.target.value)}
           readOnly={busy}
-          aria-label="Šestimístný kód"
+          aria-label="6-digit code"
           aria-invalid={note ? true : undefined}
           aria-describedby="u-code-note"
         />
-        <GoButton busy={busy} label="Přihlásit" />
+        <GoButton busy={busy} label="Sign in" />
         <span className="ticks" aria-hidden="true">
           {Array.from({ length: CODE_LENGTH }, (_, i) => (
             <i key={i} className={i < code.length ? 'on' : undefined} />
@@ -235,7 +235,7 @@ export function CodePanel({
         </span>
       </div>
       <div className="tools">
-        <button type="button" className="ps-back" onClick={onBack} disabled={busy} aria-label={`Jiný e-mail než ${email}`} title="Jiný e-mail">
+        <button type="button" className="ps-back" onClick={onBack} disabled={busy} aria-label={`Use a different email than ${email}`} title="Different email">
           <Icon name="arrow-left" size={16} />
           <span aria-hidden="true">{email}</span>
         </button>

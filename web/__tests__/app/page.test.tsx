@@ -69,18 +69,18 @@ function shownWords(container: HTMLElement) {
 
 /** The sent list is closed until its small icon is pressed. */
 function sentToggle() {
-  return screen.getByRole('button', { name: /^Odeslané/ })
+  return screen.getByRole('button', { name: /^Sent/ })
 }
 
 async function typeEmail(email: string) {
-  const input = await screen.findByLabelText('E-mail')
+  const input = await screen.findByLabelText('Email')
   fireEvent.change(input, { target: { value: email } })
-  fireEvent.click(screen.getByRole('button', { name: 'Poslat kód' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Send code' }))
 }
 
 /** The code field, once it takes typing (it is read-only while the code is being sent). */
 async function codeField() {
-  const code = await screen.findByRole('textbox', { name: 'Šestimístný kód' })
+  const code = await screen.findByRole('textbox', { name: '6-digit code' })
   await waitFor(() => expect(code).not.toHaveAttribute('readonly'))
   return code
 }
@@ -112,9 +112,9 @@ describe('sign-in is a state of the same screen', () => {
     await waitFor(() => expect(h.signIn).toHaveBeenCalledWith('resend-otp', { email: 'franta@example.com' }))
 
     const code = await codeField()
-    expect(code).toHaveAttribute('placeholder', 'Kód z e-mailu')
+    expect(code).toHaveAttribute('placeholder', 'Code from the email')
     expect(code.closest('form')).toHaveClass('on')
-    expect(screen.getByRole('button', { name: 'Jiný e-mail než franta@example.com' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use a different email than franta@example.com' })).toBeInTheDocument()
     h.signIn.mockResolvedValueOnce({ signingIn: true })
     fireEvent.change(code, { target: { value: '419275' } })
     await waitFor(() => expect(h.signIn).toHaveBeenLastCalledWith('resend-otp', { email: 'franta@example.com', code: '419275' }))
@@ -126,7 +126,7 @@ describe('sign-in is a state of the same screen', () => {
     const code = await codeField()
     h.signIn.mockRejectedValueOnce(new Error('Could not verify code'))
     fireEvent.change(code, { target: { value: '000000' } })
-    expect(await screen.findByText('Kód nesedí.')).toBeInTheDocument()
+    expect(await screen.findByText("That code doesn't match.")).toBeInTheDocument()
     expect(code).toHaveValue('')
   })
 
@@ -135,11 +135,11 @@ describe('sign-in is a state of the same screen', () => {
     render(<App />)
     await typeEmail('nekdo@example.com')
     // The note is a polite live region that is always there; the hint is its text.
-    const note = await screen.findByText('Na tenhle e-mail kód nepřijde.')
+    const note = await screen.findByText("Couldn't send a code to this email.")
     expect(note).toHaveAttribute('aria-live', 'polite')
-    expect(screen.getByLabelText('E-mail')).toHaveAttribute('aria-describedby', note.id)
-    expect(screen.getByLabelText('E-mail')).toHaveValue('nekdo@example.com')
-    expect(screen.getByLabelText('E-mail').closest('form')).toHaveClass('on')
+    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-describedby', note.id)
+    expect(screen.getByLabelText('Email')).toHaveValue('nekdo@example.com')
+    expect(screen.getByLabelText('Email').closest('form')).toHaveClass('on')
   })
 
   it('signs out a signed-in person who is not a sender', async () => {
@@ -186,23 +186,23 @@ describe('invite link', () => {
       args.addContact ? { ok: true, name: 'Franta' } : { ok: false, error: 'confirm', inviterName: 'Mallory' },
     )
     render(<App />)
-    const ask = await screen.findByRole('group', { name: 'Přidat do kontaktů? Mallory' })
+    const ask = await screen.findByRole('group', { name: 'Add Mallory to your contacts?' })
     expect(mutation('inviteLinks:claim')).toHaveBeenCalledWith({ token: 'tok9' })
     expect(localStorage.getItem('pingme.invite')).toBe('tok9')
-    fireEvent.click(within(ask).getByRole('button', { name: 'Přidat' }))
+    fireEvent.click(within(ask).getByRole('button', { name: 'Add' }))
     await waitFor(() => expect(mutation('inviteLinks:claim')).toHaveBeenLastCalledWith({ token: 'tok9', addContact: true }))
-    await waitFor(() => expect(screen.queryByRole('group', { name: /Přidat do kontaktů/ })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('group', { name: /to your contacts/ })).toBeNull())
     expect(localStorage.getItem('pingme.invite')).toBeNull()
   })
 
-  it('"Ne" drops the link without adding anyone', async () => {
+  it('"No" drops the link without adding anyone', async () => {
     member()
     window.history.replaceState(null, '', '/?i=tok9')
     h.results['inviteLinks:claim'] = { ok: false, error: 'confirm', inviterName: 'Mallory' }
     render(<App />)
-    const ask = await screen.findByRole('group', { name: 'Přidat do kontaktů? Mallory' })
-    fireEvent.click(within(ask).getByRole('button', { name: 'Ne' }))
-    await waitFor(() => expect(screen.queryByRole('group', { name: /Přidat do kontaktů/ })).toBeNull())
+    const ask = await screen.findByRole('group', { name: 'Add Mallory to your contacts?' })
+    fireEvent.click(within(ask).getByRole('button', { name: 'No' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /to your contacts/ })).toBeNull())
     expect(mutation('inviteLinks:claim')).toHaveBeenCalledTimes(1)
     expect(localStorage.getItem('pingme.invite')).toBeNull()
   })
@@ -220,17 +220,17 @@ describe('invite link', () => {
     await waitFor(() => expect(localStorage.getItem('pingme.invite')).toBeNull())
     expect(window.location.search).toBe('')
     expect(mutation('inviteLinks:claim')).toHaveBeenCalledTimes(1)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
     await waitFor(() => expect(title).toHaveFocus())
     expect(h.signOut).not.toHaveBeenCalled()
   })
 })
 
 /** Types a title and presses send. */
-async function sendTitle(text: string, label = 'Úkol') {
+async function sendTitle(text: string, label = 'Ping') {
   const title = await screen.findByRole('textbox', { name: label })
   fireEvent.change(title, { target: { value: text } })
-  fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
   return title
 }
 
@@ -242,7 +242,7 @@ describe('sending is end-to-end encrypted', () => {
     h.results['messages:send'] = { ok: true, ref: 'x' }
     const view = render(<App />)
     await waitFor(() => expect(mutation('devices:registerWeb')).toHaveBeenCalledWith({ publicKey: K.me.publicKey, name: expect.any(String) }))
-    fireEvent.click(await screen.findByRole('radio', { name: 'Hned' }))
+    fireEvent.click(await screen.findByRole('radio', { name: 'Now' }))
     const title = await sendTitle('Vyndej prádlo z pračky')
 
     await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
@@ -269,10 +269,10 @@ describe('sending is end-to-end encrypted', () => {
 
     // The row is there right away, behind the sent icon with its count.
     expect(title).toHaveValue('')
-    expect(sentToggle()).toHaveAccessibleName('Odeslané: 1')
+    expect(sentToggle()).toHaveAccessibleName('Sent: 1')
     fireEvent.click(sentToggle())
     expect(screen.getByText('Vyndej prádlo z pračky')).toBeInTheDocument()
-    expect(shownWords(view.container)).toEqual(['letí'])
+    expect(shownWords(view.container)).toEqual(['sending'])
   })
 
   it('seals for this browser even before the contact list knows it', async () => {
@@ -308,7 +308,7 @@ describe('sending is end-to-end encrypted', () => {
     h.results['messages:send'] = { ok: false, error: 'rate-limited' }
     render(<App />)
     const title = await sendTitle('Pojď na oběd')
-    expect(await screen.findByText('Moc pingů. Zkus to za chvíli.')).toBeInTheDocument()
+    expect(await screen.findByText('Too many pings. Try again in a moment.')).toBeInTheDocument()
     expect(title).toHaveValue('Pojď na oběd')
   })
 
@@ -316,13 +316,13 @@ describe('sending is end-to-end encrypted', () => {
     member()
     h.results['messages:send'] = { ok: true, ref: 'x' }
     render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     expect(screen.getByRole('radio', { name: 'Dominik' })).toBeChecked()
     fireEvent.click(screen.getByRole('radio', { name: 'Agent' }))
-    const title = screen.getByRole('textbox', { name: 'Zpráva pro agenta' })
-    expect(title).toHaveAttribute('placeholder', 'Zadej práci agentovi…')
-    expect(screen.queryByRole('button', { name: 'Poslat později' })).toBeNull()
-    await sendTitle('Mrkni na pozvánky', 'Zpráva pro agenta')
+    const title = screen.getByRole('textbox', { name: 'Message for the agent' })
+    expect(title).toHaveAttribute('placeholder', 'Give the agent a job…')
+    expect(screen.queryByRole('button', { name: 'Send later' })).toBeNull()
+    await sendTitle('Mrkni na pozvánky', 'Message for the agent')
 
     await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
     expect(sends()[0]).toMatchObject({ to: DOMINIK, forAgent: true })
@@ -348,9 +348,9 @@ describe('who it goes to', () => {
   it('one contact: the form as before, their name in the placeholder, a dot while online', async () => {
     member()
     const view = render(<App />)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
-    expect(title).toHaveAttribute('placeholder', 'Pingni Dominika…')
-    expect(screen.queryByRole('button', { name: /^Komu/ })).toBeNull()
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
+    expect(title).toHaveAttribute('placeholder', 'Ping Dominik…')
+    expect(screen.queryByRole('button', { name: /^To:/ })).toBeNull()
     const person = screen.getByRole('radio', { name: 'Dominik' })
     expect(person.closest('label')?.querySelector('.on-dot')).not.toBeNull()
     expect(view.container.querySelectorAll('.face')).toHaveLength(0)
@@ -360,27 +360,27 @@ describe('who it goes to', () => {
     member([], [contact({ userId: DOMINIK, name: 'Dominik', macLastSeen: Date.now() - 20 * 60_000, online: false }, K.dominikMac)])
     h.results['messages:send'] = { ok: true, ref: 'x' }
     const view = render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     expect(screen.getByRole('radio', { name: 'Dominik' }).closest('label')?.querySelector('.on-dot')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Poslat' })).not.toHaveAttribute('aria-disabled')
+    expect(screen.getByRole('button', { name: 'Send' })).not.toHaveAttribute('aria-disabled')
     await sendTitle('Až budeš u Macu')
     await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
     fireEvent.click(sentToggle())
-    expect(shownWords(view.container)).toEqual(['čeká'])
+    expect(shownWords(view.container)).toEqual(['waiting'])
   })
 
-  it('a contact without the app: grey, "Nemá appku", and nothing is sent', async () => {
+  it('a contact without the app: grey, "No app yet", and nothing is sent', async () => {
     member([], [contact({ userId: DOMINIK, name: 'Dominik' })])
     render(<App />)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
-    const person = screen.getByRole('radio', { name: 'Dominik, nemá appku' })
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
+    const person = screen.getByRole('radio', { name: 'Dominik, no app yet' })
     expect(person.closest('label')).toHaveClass('nomac')
-    expect(person.closest('label')).toHaveAttribute('title', 'Nemá appku')
-    const go = screen.getByRole('button', { name: 'Poslat' })
+    expect(person.closest('label')).toHaveAttribute('title', 'No app yet')
+    const go = screen.getByRole('button', { name: 'Send' })
     expect(go).toHaveAttribute('aria-disabled', 'true')
-    expect(go).toHaveAttribute('title', 'Nemá appku')
+    expect(go).toHaveAttribute('title', 'No app yet')
     await sendTitle('Ahoj')
-    expect(await screen.findByText('Nemá appku.')).toBeInTheDocument()
+    expect(await screen.findByText('No app yet.')).toBeInTheDocument()
     expect(title).toHaveValue('Ahoj')
     await act(() => new Promise((r) => setTimeout(r, 10)))
     expect(mutation('messages:send')).not.toHaveBeenCalled()
@@ -393,16 +393,16 @@ describe('who it goes to', () => {
     member([], [dominik(), noApp, offline, viki])
     h.results['messages:send'] = { ok: true, ref: 'x' }
     const view = render(<App />)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
     // The first contact with the app is chosen; the old person/agent pair is gone.
-    const picker = screen.getByRole('button', { name: 'Komu: Dominik' })
+    const picker = screen.getByRole('button', { name: 'To: Dominik' })
     expect(picker).toHaveAttribute('aria-expanded', 'false')
-    expect(title).toHaveAttribute('placeholder', 'Pingni Dominika…')
+    expect(title).toHaveAttribute('placeholder', 'Ping Dominik…')
     expect(screen.queryByRole('radio', { name: 'Dominik' })).toBeNull()
 
     fireEvent.click(picker)
     expect(picker).toHaveAttribute('aria-expanded', 'true')
-    const list = screen.getByRole('group', { name: 'Komu' })
+    const list = screen.getByRole('group', { name: 'To' })
     const faces = Array.from(list.querySelectorAll('.face')).map((f) => [f.textContent, f.classList.contains('nomac'), !!f.querySelector('.on-dot')])
     expect(faces).toEqual([
       ['D', false, true],
@@ -410,12 +410,12 @@ describe('who it goes to', () => {
       ['MN', false, false],
       ['V', false, true],
     ])
-    expect(within(list).getByText('Nemá appku')).toBeInTheDocument()
+    expect(within(list).getByText('No app yet')).toBeInTheDocument()
 
     fireEvent.click(within(list).getByRole('radio', { name: 'Viki' }), { detail: 1 })
     expect(picker).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: 'Komu: Viki' })).toBeInTheDocument()
-    expect(title).toHaveAttribute('placeholder', 'Pingni Viki…')
+    expect(screen.getByRole('button', { name: 'To: Viki' })).toBeInTheDocument()
+    expect(title).toHaveAttribute('placeholder', 'Ping Viki…')
 
     await sendTitle('Máš chvilku?')
     await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
@@ -424,10 +424,10 @@ describe('who it goes to', () => {
     expect(await openFor(K.vikiMac.privateKey, 'title', sends()[0].ref, sends()[0].envelopes[0], VIKI)).toBe('Máš chvilku?')
 
     // Picking the one without the app greys out sending.
-    fireEvent.click(screen.getByRole('button', { name: 'Komu: Viki' }))
-    fireEvent.click(within(list).getByRole('radio', { name: 'Jana, nemá appku' }), { detail: 1 })
-    expect(screen.getByRole('button', { name: 'Komu: Jana, nemá appku' })).toHaveAttribute('title', 'Nemá appku')
-    expect(screen.getByRole('button', { name: 'Poslat' })).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'To: Viki' }))
+    fireEvent.click(within(list).getByRole('radio', { name: 'Jana, no app yet' }), { detail: 1 })
+    expect(screen.getByRole('button', { name: 'To: Jana, no app yet' })).toHaveAttribute('title', 'No app yet')
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute('aria-disabled', 'true')
 
     // The agent is a toggle next to the picker. With 2+ contacts each row says who it went to.
     expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute('aria-pressed', 'false')
@@ -438,10 +438,10 @@ describe('who it goes to', () => {
   it('the picker closes with Escape and a press outside, and Enter does not send', async () => {
     member([], [dominik(), contact({ userId: VIKI, name: 'Viki' }, K.vikiMac)])
     render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
-    const picker = screen.getByRole('button', { name: 'Komu: Dominik' })
+    await screen.findByRole('textbox', { name: 'Ping' })
+    const picker = screen.getByRole('button', { name: 'To: Dominik' })
     fireEvent.click(picker)
-    const viki = within(screen.getByRole('group', { name: 'Komu' })).getByRole('radio', { name: 'Viki' })
+    const viki = within(screen.getByRole('group', { name: 'To' })).getByRole('radio', { name: 'Viki' })
     fireEvent.keyDown(viki, { key: 'Enter' })
     expect(picker).toHaveAttribute('aria-expanded', 'false')
     expect(picker).toHaveFocus()
@@ -459,21 +459,21 @@ describe('the sent list opens on this device', () => {
   it('opens the later options with day, time and the six repeat options', async () => {
     member()
     render(<App />)
-    const when = await screen.findByRole('button', { name: 'Poslat později' })
+    const when = await screen.findByRole('button', { name: 'Send later' })
     expect(when).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('combobox', { name: 'Opakování' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Repeat' })).toBeNull()
     fireEvent.click(when)
     expect(when).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByLabelText('Den')).toBeVisible()
-    expect(screen.getByLabelText('Čas')).toBeVisible()
-    const repeat = screen.getByRole('combobox', { name: 'Opakování' })
+    expect(screen.getByLabelText('Day')).toBeVisible()
+    expect(screen.getByLabelText('Time')).toBeVisible()
+    const repeat = screen.getByRole('combobox', { name: 'Repeat' })
     expect(Array.from((repeat as HTMLSelectElement).options).map((o) => [o.value, o.text])).toEqual([
-      ['', 'Jednou'],
-      ['daily', 'Každý den'],
-      ['weekdays', 'Pracovní dny'],
-      ['weekly', 'Každý týden'],
-      ['biweekly', 'Po 14 dnech'],
-      ['monthly', 'Každý měsíc'],
+      ['', 'Once'],
+      ['daily', 'Every day'],
+      ['weekdays', 'Weekdays'],
+      ['weekly', 'Every week'],
+      ['biweekly', 'Every 2 weeks'],
+      ['monthly', 'Every month'],
     ])
   })
 
@@ -492,12 +492,12 @@ describe('the sent list opens on this device', () => {
     ]
     member(rows)
     const view = render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     expect(view.container.querySelectorAll('.it')).toHaveLength(0)
-    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Odeslané: 9, nová odpověď'))
+    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Sent: 9, new reply'))
     fireEvent.click(sentToggle())
     await waitFor(() => expect(screen.getAllByText('Pošli mi fotky z hor')).toHaveLength(9))
-    expect(shownWords(view.container)).toEqual(['letí', 'vyskočilo', 'viděl', 'píše', 'odpověď', 'hotovo', 'za 10 min', 'čeká', 'zítra 9:30'])
+    expect(shownWords(view.container)).toEqual(['sending', 'popped up', 'seen', 'typing', 'reply', 'done', 'in 10 min', 'waiting', 'tomorrow 9:30'])
     expect(screen.getByText('Jdu na to')).toBeInTheDocument()
     expect(view.container.querySelectorAll('.it.gone')).toHaveLength(1)
   })
@@ -510,11 +510,11 @@ describe('the sent list opens on this device', () => {
     ])
     h.results['messages:ackReply'] = true
     const view = render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     fireEvent.click(sentToggle())
-    await waitFor(() => expect(screen.getAllByText('Text je na jiném zařízení.')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText('Text is on another device.')).toHaveLength(2))
     expect(screen.getByText('Ráno')).toBeInTheDocument()
-    expect(screen.getAllByText('Odpověď je na jiném zařízení.')).toHaveLength(2)
+    expect(screen.getAllByText('Reply is on another device.')).toHaveLength(2)
     expect(screen.queryByText('Cizí klíč')).toBeNull()
     expect(screen.queryByText('Taky cizí')).toBeNull()
     expect(view.container.querySelectorAll('.it-ph')).toHaveLength(0)
@@ -525,10 +525,10 @@ describe('the sent list opens on this device', () => {
     member([pending])
     h.results['messages:ackReply'] = true
     const view = render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
 
     // Closed list: the reply is not on screen, so it is not acked. The icon wears a badge instead.
-    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Odeslané: 1, nová odpověď'))
+    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Sent: 1, new reply'))
     expect(screen.getByTestId('reply-badge')).toBeInTheDocument()
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'))
@@ -545,14 +545,14 @@ describe('the sent list opens on this device', () => {
     view.rerender(<App />)
     expect(mutation('messages:ackReply')).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Za chvíli')).toBeInTheDocument()
-    expect(screen.queryByText('Odpověď je na jiném zařízení.')).toBeNull()
+    expect(screen.queryByText('Reply is on another device.')).toBeNull()
     expect(screen.queryByTestId('reply-badge')).toBeNull()
 
     // A reload: the reply comes back from this browser's own store.
     cleanup()
     resetDeviceKey()
     render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     fireEvent.click(sentToggle())
     expect(await screen.findByText('Za chvíli')).toBeInTheDocument()
     expect(mutation('messages:ackReply')).toHaveBeenCalledTimes(1)
@@ -582,9 +582,9 @@ describe('connect your agent', () => {
     expect(panel).toHaveClass('on')
     expect(screen.getByRole('link', { name: /github\.com\/kroufekd\/pingme/ })).toHaveAttribute('href', 'https://github.com/kroufekd/pingme')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Zkopírovat' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(sentence))
-    expect(await screen.findByRole('button', { name: 'Zkopírováno' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
   })
 
   it('without a clipboard it selects the sentence instead of failing', async () => {
@@ -592,9 +592,9 @@ describe('connect your agent', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => Promise.reject(new Error('denied'))) }, configurable: true })
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Connect your agent' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Zkopírovat' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
     await waitFor(() => expect(window.getSelection()?.toString()).toContain('Install pingme'))
-    expect(screen.getByRole('button', { name: 'Zkopírovat' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
   })
 })
 
@@ -602,39 +602,39 @@ describe('validation', () => {
   it('never leaves validation to the browser', async () => {
     member()
     const view = render(<App />)
-    await screen.findByRole('textbox', { name: 'Úkol' })
+    await screen.findByRole('textbox', { name: 'Ping' })
     const forms = Array.from(view.container.querySelectorAll('form'))
     expect(forms).toHaveLength(3)
     for (const form of forms) expect(form.noValidate).toBe(true)
     expect(view.container.querySelectorAll('[required], [pattern]')).toHaveLength(0)
-    expect(screen.getByLabelText('E-mail', { selector: 'input' })).toHaveAttribute('type', 'email')
-    expect(screen.getByLabelText('E-mail', { selector: 'input' })).toHaveAttribute('autocomplete', 'email')
+    expect(screen.getByLabelText('Email', { selector: 'input' })).toHaveAttribute('type', 'email')
+    expect(screen.getByLabelText('Email', { selector: 'input' })).toHaveAttribute('autocomplete', 'email')
     expect(view.container.querySelector('#u-code')).toHaveAttribute('autocomplete', 'one-time-code')
     expect(view.container.querySelector('#u-code')).toHaveAttribute('inputmode', 'numeric')
   })
 
   it('email: quiet until the first failed submit, then checks while typing', async () => {
     render(<App />)
-    const input = await screen.findByLabelText('E-mail')
-    const send = screen.getByRole('button', { name: 'Poslat kód' })
+    const input = await screen.findByLabelText('Email')
+    const send = screen.getByRole('button', { name: 'Send code' })
 
     fireEvent.change(input, { target: { value: 'franta' } })
     expect(input).not.toHaveAttribute('aria-invalid')
-    expect(screen.queryByText('Chybí zavináč.')).toBeNull()
+    expect(screen.queryByText('Missing the @.')).toBeNull()
 
     fireEvent.click(send)
-    expect(screen.getByText('Chybí zavináč.')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByText('Missing the @.')).toHaveAttribute('aria-live', 'polite')
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(input).toHaveFocus()
     expect(input.closest('form')).toHaveClass('bad')
     expect(h.signIn).not.toHaveBeenCalled()
 
     fireEvent.change(input, { target: { value: 'franta@' } })
-    expect(screen.getByText('Chybí doména.')).toBeInTheDocument()
+    expect(screen.getByText('Missing the domain.')).toBeInTheDocument()
     fireEvent.change(input, { target: { value: 'fran ta@example.com' } })
-    expect(screen.getByText('E-mail nemá mezery.')).toBeInTheDocument()
+    expect(screen.getByText('No spaces in an email.')).toBeInTheDocument()
     fireEvent.change(input, { target: { value: '' } })
-    expect(screen.getByText('Napiš e-mail.')).toBeInTheDocument()
+    expect(screen.getByText('Enter your email.')).toBeInTheDocument()
 
     fireEvent.change(input, { target: { value: 'franta@example.com' } })
     expect(input).not.toHaveAttribute('aria-invalid')
@@ -645,18 +645,18 @@ describe('validation', () => {
 
   it('email: an empty submit says so and sends nothing', async () => {
     render(<App />)
-    await screen.findByLabelText('E-mail')
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat kód' }))
-    expect(screen.getByText('Napiš e-mail.')).toBeInTheDocument()
+    await screen.findByLabelText('Email')
+    fireEvent.click(screen.getByRole('button', { name: 'Send code' }))
+    expect(screen.getByText('Enter your email.')).toBeInTheDocument()
     expect(h.signIn).not.toHaveBeenCalled()
   })
 
   it('email: a likely typo holds the first submit and one tap sends the fixed address', async () => {
     render(<App />)
     await typeEmail('franta@gmial.com')
-    const fix = screen.getByRole('button', { name: 'Opravit na franta@gmail.com' })
+    const fix = screen.getByRole('button', { name: 'Fix to franta@gmail.com' })
     expect(fix).toHaveTextContent('franta@gmail.com')
-    expect(screen.getByLabelText('E-mail')).not.toHaveAttribute('aria-invalid')
+    expect(screen.getByLabelText('Email')).not.toHaveAttribute('aria-invalid')
     expect(h.signIn).not.toHaveBeenCalled()
 
     fireEvent.click(fix)
@@ -668,7 +668,7 @@ describe('validation', () => {
     render(<App />)
     await typeEmail('franta@gmial.com')
     expect(h.signIn).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat kód' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send code' }))
     await waitFor(() => expect(h.signIn).toHaveBeenCalledWith('resend-otp', { email: 'franta@gmial.com' }))
   })
 
@@ -676,11 +676,11 @@ describe('validation', () => {
     h.signIn.mockRejectedValueOnce(new Error('NOT_INVITED'))
     render(<App />)
     await typeEmail('nekdo@example.com')
-    await screen.findByText('Na tenhle e-mail kód nepřijde.')
-    expect(screen.getByLabelText('E-mail').closest('form')).toHaveClass('bad')
-    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'nekdo.jiny@example.com' } })
-    expect(screen.queryByText('Na tenhle e-mail kód nepřijde.')).toBeNull()
-    expect(screen.getByLabelText('E-mail').closest('form')).not.toHaveClass('bad')
+    await screen.findByText("Couldn't send a code to this email.")
+    expect(screen.getByLabelText('Email').closest('form')).toHaveClass('bad')
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'nekdo.jiny@example.com' } })
+    expect(screen.queryByText("Couldn't send a code to this email.")).toBeNull()
+    expect(screen.getByLabelText('Email').closest('form')).not.toHaveClass('bad')
   })
 
   it('code: takes a pasted code with spaces, drops letters, and says when it is short', async () => {
@@ -691,14 +691,14 @@ describe('validation', () => {
 
     fireEvent.change(code, { target: { value: '41a9' } })
     expect(code).toHaveValue('419')
-    fireEvent.click(screen.getByRole('button', { name: 'Přihlásit' }))
-    expect(screen.getByText('Kód má 6 číslic.')).toHaveAttribute('aria-live', 'polite')
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(screen.getByText('The code has 6 digits.')).toHaveAttribute('aria-live', 'polite')
     expect(code).toHaveAttribute('aria-invalid', 'true')
     expect(h.signIn).toHaveBeenCalledTimes(1)
 
     h.signIn.mockResolvedValueOnce({ signingIn: true })
     fireEvent.change(code, { target: { value: ' 419 275 ' } })
-    expect(screen.queryByText('Kód má 6 číslic.')).toBeNull()
+    expect(screen.queryByText('The code has 6 digits.')).toBeNull()
     await waitFor(() => expect(h.signIn).toHaveBeenLastCalledWith('resend-otp', { email: 'franta@example.com', code: '419275' }))
   })
 
@@ -708,37 +708,37 @@ describe('validation', () => {
     const code = await codeField()
     h.signIn.mockRejectedValueOnce(new Error('Could not verify code'))
     fireEvent.change(code, { target: { value: '000000' } })
-    await screen.findByText('Kód nesedí.')
+    await screen.findByText("That code doesn't match.")
     expect(code).toHaveAttribute('aria-invalid', 'true')
     expect(code.closest('form')).toHaveClass('bad')
     await waitFor(() => expect(code).not.toHaveAttribute('readonly'))
     fireEvent.change(code, { target: { value: '4' } })
-    expect(screen.queryByText('Kód nesedí.')).toBeNull()
+    expect(screen.queryByText("That code doesn't match.")).toBeNull()
     expect(code).not.toHaveAttribute('aria-invalid')
   })
 
   it('task: sending nothing nudges the field without a visible message', async () => {
     member()
     render(<App />)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     expect(title).toHaveAttribute('aria-invalid', 'true')
     expect(title).toHaveFocus()
     expect(title.closest('.line')).toHaveClass('nudge-a')
-    expect(screen.getByText('Napiš, co je potřeba.')).toHaveClass('vh')
+    expect(screen.getByText('Write what you need.')).toHaveClass('vh')
     expect(mutation('messages:send')).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     expect(title.closest('.line')).toHaveClass('nudge-b')
     fireEvent.change(title, { target: { value: 'A' } })
     expect(title).not.toHaveAttribute('aria-invalid')
-    expect(screen.queryByText('Napiš, co je potřeba.')).toBeNull()
+    expect(screen.queryByText('Write what you need.')).toBeNull()
   })
 
   it('task: the count shows only near the limit', async () => {
     member()
     const view = render(<App />)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
     const count = view.container.querySelector('#u-count')
     fireEvent.change(title, { target: { value: 'a'.repeat(169) } })
     expect(count).not.toHaveClass('on')
@@ -746,7 +746,7 @@ describe('validation', () => {
     fireEvent.change(title, { target: { value: 'a'.repeat(188) } })
     expect(count).toHaveClass('on')
     expect(count).toHaveTextContent('12')
-    expect(screen.getByText('Zbývá znaků: 12')).toBeInTheDocument()
+    expect(screen.getByText('12 characters left')).toBeInTheDocument()
     expect(title).toHaveAttribute('aria-describedby', 'u-form-note u-count')
     fireEvent.change(title, { target: { value: 'a'.repeat(200) } })
     expect(count).toHaveClass('full')
@@ -755,25 +755,25 @@ describe('validation', () => {
   it('task: "later" in the past is marked at once and is not sent', async () => {
     member()
     render(<App />)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat později' }))
-    const day = screen.getByLabelText('Den')
+    const title = await screen.findByRole('textbox', { name: 'Ping' })
+    fireEvent.click(screen.getByRole('button', { name: 'Send later' }))
+    const day = screen.getByLabelText('Day')
     expect(day).not.toHaveAttribute('aria-invalid')
 
     fireEvent.change(day, { target: { value: '2020-01-01' } })
-    expect(screen.getByText('Tenhle čas už byl.')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByText('That time has passed.')).toHaveAttribute('aria-live', 'polite')
     expect(day).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByLabelText('Čas')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Time')).toHaveAttribute('aria-invalid', 'true')
     expect(day.closest('.pf-later')).toHaveClass('bad')
 
     fireEvent.change(title, { target: { value: 'Zalij kytky' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     expect(mutation('messages:send')).not.toHaveBeenCalled()
     expect(title).toHaveValue('Zalij kytky')
 
     fireEvent.change(day, { target: { value: '2999-01-01' } })
-    expect(screen.getByText('Tenhle čas nejde.')).toBeInTheDocument()
+    expect(screen.getByText("That time doesn't work.")).toBeInTheDocument()
     fireEvent.change(day, { target: { value: '' } })
-    expect(screen.getByText('Vyber den a čas.')).toBeInTheDocument()
+    expect(screen.getByText('Pick a day and time.')).toBeInTheDocument()
   })
 })

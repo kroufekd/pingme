@@ -3,8 +3,7 @@ import type { CSSProperties } from 'react'
 import { Icon } from './icon'
 
 const DEFAULT_NAME = 'Dominik'
-const OK = 'Jasně'
-const VOWELS = 'aáäeéěiíoóöuúůüyý'
+const OK = 'Got it'
 const REDUCE = '(prefers-reduced-motion: reduce)'
 
 /** The intro shows once per account: only for a member the server says has not seen it yet. */
@@ -12,26 +11,13 @@ export function needsOnboarding(me: { status: string; onboarded?: boolean } | un
   return me?.status === 'member' && me.onboarded === false
 }
 
-/**
- * "Dominik" -> "Dominikovi". Null whenever plain -ovi could be wrong Czech: a vowel or non-letter
- * at the end, more than one word, or a mobile e (Marek -> Markovi, Pavel -> Pavlovi).
- */
-export function dative(name: string): string | null {
-  const n = name.trim()
-  if (!/^\p{L}+$/u.test(n)) return null
-  if (VOWELS.includes(n.slice(-1).toLowerCase())) return null
-  if (/[eě][kcl]$/i.test(n)) return null
-  return `${n}ovi`
-}
-
-/** The encrypted intro, in English on purpose: a nod to PGP. */
+/** The encrypted intro: a nod to PGP. */
 export const ENCRYPTED_LINE = 'This offers Pretty Good Privacy, for you, me and our agents.'
 
 export function introLine(name: string, encrypted: boolean): string {
   if (encrypted) return ENCRYPTED_LINE
   const who = name.trim() || DEFAULT_NAME
-  const to = dative(who)
-  return to ? `Letí rovnou ${to} na Mac.` : `Letí rovnou na Mac, ${who} to uvidí hned.`
+  return `Goes straight to ${who}'s Mac.`
 }
 
 /** Reduced motion is read in JS too, so the scene can drop the flying ping instead of only freezing it. */
@@ -158,7 +144,7 @@ export function Onboarding({
             </span>
           )}
         </div>
-        <p className="ob-t" id={textId} lang={encrypted ? 'en' : undefined}>
+        <p className="ob-t" id={textId}>
           {introLine(name, encrypted)}
         </p>
         <button ref={okRef} type="button" className="ob-ok" onClick={close}>
