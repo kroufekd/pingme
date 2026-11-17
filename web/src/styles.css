@@ -1179,7 +1179,8 @@ body vite-error-overlay {
   .ob-ok {
     min-width: 128px;
     height: 46px;
-    padding: 0 26px;
+    /* Newsreader leaves room below the baseline, so the label sat ~2px high: nudge it to the optical center. */
+    padding: 3px 26px 0;
     border-radius: 23px;
     background: var(--ink);
     color: var(--cream);
@@ -1854,7 +1855,7 @@ body vite-error-overlay {
     box-shadow: inset 0 0 0 1.5px var(--r-ink);
   }
   .pp-ok {
-    padding: 0 20px;
+    padding: 3px 20px 0;
   }
   .pp-warn {
     flex-basis: 100%;
