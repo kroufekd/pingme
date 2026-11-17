@@ -308,7 +308,8 @@ Joining (same flow as phase 1):
      the token in the Keychain. `name` is the account's name. Until the request expires, every
      claim with the secret returns this same answer (one device, one token), so a retry after a
      lost answer is safe and someone else who saw the URL gets nothing they can open. If it does
-     not open, treat it as a failed pairing and start over.
+     not open, treat it as a failed pairing and start over. A Mac pairing again then calls
+     [`/device/unpair`](#post-deviceunpair) with its previous token, so the old device leaves the account.
    - `429 rate-limited`: more than 60 claims a minute for this request. Keep polling at 2 s.
    - `404 { "ok": false, "error": "not-found" }`: unknown, wrong secret, expired, too many wrong
      codes, or the device was removed in the meantime. Stop and start over. A `404` after the
@@ -395,7 +396,8 @@ type InboxItem = {
 }
 ```
 
-Oldest first, at most 50, only messages not yet acked by this device. A message is deleted once
+Oldest first, at most 50, only messages not yet acked by this device, picked from the newest 300
+waiting for your account, so pings another Mac never acks cannot hide new ones. A message is deleted once
 every active Mac it was sealed to acked it, or after 7 days.
 
 ### Convex subscription `devices:feed` `{ token: string }`

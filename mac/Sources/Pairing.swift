@@ -28,6 +28,8 @@ final class Pairing {
     private var url: URL?
     var onChange: (() -> Void)?
     var onPaired: ((DeviceIdentity) -> Void)?
+    /// The token of the device this pairing replaces, dropped from the account once the new one works.
+    private var replaced: String?
 
     static let poll: UInt64 = 2_000_000_000
     static let lifetime: TimeInterval = 600
@@ -74,8 +76,8 @@ final class Pairing {
         let identity = DeviceIdentity(privateKey: Seal.exportPrivateKey(pair.privateKey))
         // Pairing again replaces this Mac's device. The old one would otherwise stay on the account,
         // never confirm a ping, and keep the person's inbox full until each ping expires.
-        var oldToken: String?
-        if case .success(let old?) = IdentityStore.load() { oldToken = old.token }
+        // Kept here across attempts: a failed one leaves only a fresh, tokenless key in the Keychain.
+        if case .success(let old?) = IdentityStore.load(), let t = old.token { replaced = t }
         do {
             // A fresh key for every pairing. The private half is in the Keychain before anything leaves the Mac.
             try IdentityStore.save(identity)
@@ -137,7 +139,10 @@ final class Pairing {
                 state = .done(c.name ?? "")
                 onPaired?(id)
                 // Best effort: if this fails, the old device stays, but the inbox reads newest first, so it buries nothing.
-                if let oldToken, oldToken != token { _ = await api.unpair(token: oldToken) }
+                if let old = replaced, old != token {
+                    replaced = nil
+                    _ = await api.unpair(token: old)
+                }
                 return
             case .success(.gone):
                 // Expired, already claimed or unknown: it never comes back.
