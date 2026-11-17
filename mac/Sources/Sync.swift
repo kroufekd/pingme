@@ -216,6 +216,14 @@ final class SyncEngine {
         return r
     }
 
+    func removeContact(_ userId: String) async -> Result<Void, ApiError> {
+        guard let token = identity?.token else { return .failure(.unauthorized) }
+        let r = await api.removeContact(token: token, userId: userId)
+        if case .failure(.unauthorized) = r { unauthorized(token) }
+        contactsAt = .distantPast
+        return r
+    }
+
     func revokeInvite(_ id: String) async -> Result<Void, ApiError> {
         guard let token = identity?.token else { return .failure(.unauthorized) }
         let r = await api.revokeInvite(token: token, inviteId: id)

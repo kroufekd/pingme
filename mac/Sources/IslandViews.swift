@@ -142,6 +142,7 @@ struct IslandActions {
     var invite: () -> Void = {}
     var revokeInvite: (String) -> Void = { _ in }
     var toggleContact: (String) -> Void = { _ in }
+    var removeContact: (String) -> Void = { _ in }
     var pair: () -> Void = {}
     var cancelPair: () -> Void = {}
 }
@@ -1168,7 +1169,7 @@ struct PeopleCard: View {
                         .accessibilityHint("Otisk klíče")
                         .accessibilityAction(.default) { actions.toggleContact(c.id) }
                         if model.openContact == c.id {
-                            KeyDetail(contact: c, mine: model.myKey)
+                            KeyDetail(contact: c, mine: model.myKey, onRemove: { actions.removeContact(c.id) })
                                 .transition(.opacity)
                         }
                     }
@@ -1291,22 +1292,35 @@ private struct ContactRowContent: View {
 private struct KeyDetail: View {
     let contact: ContactRow
     let mine: String?
+    let onRemove: () -> Void
+    /// The first press only asks; the second removes.
+    @State private var armed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if contact.keys.isEmpty {
-                line("", "Žádné zařízení")
+            VStack(alignment: .leading, spacing: 4) {
+                if contact.keys.isEmpty {
+                    line("", "Žádné zařízení")
+                }
+                ForEach(Array(contact.keys.prefix(4).enumerated()), id: \.offset) { _, k in
+                    line(k.kind, k.fingerprint)
+                }
+                if let mine { line("Tento Mac", mine) }
             }
-            ForEach(Array(contact.keys.prefix(4).enumerated()), id: \.offset) { _, k in
-                line(k.kind, k.fingerprint)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Otisky klíčů")
+            Button {
+                if armed { onRemove() } else { armed = true }
+            } label: {
+                QLabel(icon: "x", text: armed ? "Opravdu odebrat" : "Odebrat z kontaktů")
             }
-            if let mine { line("Tento Mac", mine) }
+            .buttonStyle(QStyle())
+            .padding(.top, 4)
+            .accessibilityLabel(armed ? "Potvrdit: odebrat \(contact.name) z kontaktů" : "Odebrat \(contact.name) z kontaktů")
         }
         .padding(.leading, 24)
         .padding(.top, 2)
         .padding(.bottom, 8)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Otisky klíčů")
     }
 
     private func line(_ label: String, _ value: String) -> some View {

@@ -9,6 +9,7 @@ import {
   INVITE_LIMIT,
   MAX_OPEN_INVITES,
   RE_HASH,
+  areContacts,
   cleanName,
   deviceForToken,
   dropAllowlistIfUnused,
@@ -96,15 +97,18 @@ export const start = mutation({
 
 /** After the code: the signed-in person joins (and, on a legacy link, becomes its sender). */
 export const claim = mutation({
-  args: { token: v.string() },
+  // addContact: an existing member said yes to this inviter. Without it a member only gets "confirm":
+  // anyone who knows a member's email could otherwise send a link that adds itself on open.
+  args: { token: v.string(), addContact: v.optional(v.boolean()) },
   returns: v.union(
     v.object({ ok: v.literal(true), name: v.string() }),
+    v.object({ ok: v.literal(false), error: v.literal("confirm"), inviterName: v.string() }),
     v.object({
       ok: v.literal(false),
       error: v.union(v.literal("bad-link"), v.literal("wrong-email"), v.literal("signed-out")),
     }),
   ),
-  handler: async (ctx, { token }) => {
+  handler: async (ctx, { token, addContact }) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) return { ok: false as const, error: "signed-out" as const }
     const now = Date.now()
@@ -114,6 +118,9 @@ export const claim = mutation({
     const email = user?.email ? normalizeEmail(user.email) : ""
     if (!user || !email || !open.link.email || email !== open.link.email) {
       return { ok: false as const, error: "wrong-email" as const }
+    }
+    if (open.inviterId && user.memberAt !== undefined && !addContact && !(await areContacts(ctx, open.inviterId, userId))) {
+      return { ok: false as const, error: "confirm" as const, inviterName: open.inviterName ?? open.name }
     }
     await ctx.db.patch(open.link._id, { claimedAt: now })
 

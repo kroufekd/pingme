@@ -419,6 +419,11 @@ final class DeviceAPI: @unchecked Sendable {
         }
     }
 
+    /// Ends a contact both ways (POST /device/contacts/remove).
+    func removeContact(token: String, userId: String) async -> Result<Void, ApiError> {
+        await result("POST", "/device/contacts/remove", token: token, body: ["userId": userId]).map { _ in () }
+    }
+
     func revokeInvite(token: String, inviteId: String) async -> Result<Void, ApiError> {
         await result("POST", "/device/invites/revoke", token: token, body: ["inviteId": inviteId]).map { _ in () }
     }

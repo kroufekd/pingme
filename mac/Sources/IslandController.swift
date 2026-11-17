@@ -359,6 +359,7 @@ final class IslandController {
         invite: { [weak self] in self?.invite() },
         revokeInvite: { [weak self] id in self?.revokeInvite(id) },
         toggleContact: { [weak self] id in self?.toggleContact(id) },
+        removeContact: { [weak self] id in self?.removeContact(id) },
         pair: { [weak self] in self?.pairing.start() },
         cancelPair: { [weak self] in self?.pairing.cancel() })
 
@@ -519,6 +520,20 @@ final class IslandController {
             switch await sync.revokeInvite(id) {
             case .success, .failure(.server(404, _)):
                 model.invites.removeAll { $0.id == id }
+            case .failure(let e):
+                model.said = e.message
+                model.saidOK = false
+            }
+        }
+    }
+
+    /// Ends a contact both ways: neither can ping the other any more.
+    private func removeContact(_ id: String) {
+        Task {
+            switch await sync.removeContact(id) {
+            case .success, .failure(.server(404, _)):
+                model.contacts.removeAll { $0.id == id }
+                if model.openContact == id { model.openContact = nil }
             case .failure(let e):
                 model.said = e.message
                 model.saidOK = false

@@ -216,6 +216,14 @@ export function addDeviceRoutes(http: HttpRouter) {
     return r ? json({ ok: true }) : failure({ error: "not-found" })
   })
 
+  authed(http, "POST", "/device/contacts/remove", async (ctx, hash, body) => {
+    const userId = str(body.userId)
+    if (!userId || userId.length > 64) return bad()
+    const r = await ctx.runMutation(internal.contacts.removeForDevice, { tokenHash: hash, userId })
+    if (r === null) return unauthorized()
+    return r ? json({ ok: true }) : failure({ error: "not-found" })
+  })
+
   authed(http, "POST", "/device/sync", async (ctx, hash, body) => {
     const ack = refs(body.ack, 100)
     if (!ack || (body.statuses !== undefined && !Array.isArray(body.statuses))) return bad()

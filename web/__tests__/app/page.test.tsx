@@ -179,6 +179,34 @@ describe('invite link', () => {
     expect(window.location.search).toBe('?i=tok123')
   })
 
+  it('asks a member before adding whoever sent the link, and adds only on yes', async () => {
+    member()
+    window.history.replaceState(null, '', '/?i=tok9')
+    h.mutations['inviteLinks:claim'] = vi.fn(async (args: { addContact?: boolean }) =>
+      args.addContact ? { ok: true, name: 'Franta' } : { ok: false, error: 'confirm', inviterName: 'Mallory' },
+    )
+    render(<App />)
+    const ask = await screen.findByRole('group', { name: 'Přidat do kontaktů? Mallory' })
+    expect(mutation('inviteLinks:claim')).toHaveBeenCalledWith({ token: 'tok9' })
+    expect(localStorage.getItem('pingme.invite')).toBe('tok9')
+    fireEvent.click(within(ask).getByRole('button', { name: 'Přidat' }))
+    await waitFor(() => expect(mutation('inviteLinks:claim')).toHaveBeenLastCalledWith({ token: 'tok9', addContact: true }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /Přidat do kontaktů/ })).toBeNull())
+    expect(localStorage.getItem('pingme.invite')).toBeNull()
+  })
+
+  it('"Ne" drops the link without adding anyone', async () => {
+    member()
+    window.history.replaceState(null, '', '/?i=tok9')
+    h.results['inviteLinks:claim'] = { ok: false, error: 'confirm', inviterName: 'Mallory' }
+    render(<App />)
+    const ask = await screen.findByRole('group', { name: 'Přidat do kontaktů? Mallory' })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Ne' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /Přidat do kontaktů/ })).toBeNull())
+    expect(mutation('inviteLinks:claim')).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('pingme.invite')).toBeNull()
+  })
+
   it('drops the token and the ?i param once the claim is ok', async () => {
     // Like Convex: when the claim resolves, senders.me already says member.
     h.mutations['inviteLinks:claim'] = vi.fn(async () => {

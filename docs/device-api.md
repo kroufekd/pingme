@@ -275,9 +275,13 @@ Joining (same flow as phase 1):
 
 - `inviteLinks.check` (query) `{ token }` -> `{ ok: true; name: string; inviterName?: string } | { ok: false }`
 - `inviteLinks.start` (mutation) `{ token, email }` -> `{ ok: true } | { ok: false; error: "bad-link" | "bad-email" }`
-- then the email code (Convex Auth), then `inviteLinks.claim` (mutation) `{ token }` ->
-  `{ ok: true; name: string } | { ok: false; error: "bad-link" | "wrong-email" | "signed-out" }`.
-  Claiming makes the person a member and a contact of the inviter, both ways.
+- then the email code (Convex Auth), then `inviteLinks.claim` (mutation) `{ token, addContact?: boolean }` ->
+  `{ ok: true; name: string } | { ok: false; error: "confirm"; inviterName: string } | { ok: false; error: "bad-link" | "wrong-email" | "signed-out" }`.
+  Claiming makes the person a member and a contact of the inviter, both ways. Someone who is already
+  a member gets `confirm` first (anyone who knows their email could otherwise add themselves with a
+  link); the web asks "Přidat do kontaktů? <inviterName>" and claims again with `addContact: true`.
+- `contacts.remove` (mutation) `{ userId }` -> `{ ok: true } | { ok: false; error: "not-member" | "not-contact" }`.
+  Ends a contact both ways; either side may do it.
 - `invites.check` (query) `{ email }` -> `boolean`. The owner (env `OWNER_EMAIL`) is always allowed.
 
 ## Mac: pairing
@@ -498,6 +502,11 @@ Removes one of your person's devices (web or Mac, this one included), listed in
 `GET /device/contacts` under `me.devices`. `200 { "ok": true }`, `404 not-found` (not yours or
 already removed), `400 bad-request`. The Mac should show its person's devices with this, and a
 "Nový Mac" notice for a Mac in `me.devices` whose `createdAt` is newer than its own.
+
+### `POST /device/contacts/remove` `{ "userId": "..." }`
+
+Ends a contact both ways, so neither can ping the other. `200 { "ok": true }`, `404 not-found` (not a
+contact), `400 bad-request`. The Mac offers it under a contact's key fingerprints in Lidé.
 
 ## Errors
 

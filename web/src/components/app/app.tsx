@@ -8,6 +8,7 @@ import type { ContactsView, MyDevice } from '@/lib/network'
 import type { Me } from '@/lib/tasks'
 import { useNow } from '@/lib/time'
 import { ConnectAgent } from './connect'
+import { Icon } from './icon'
 import { NewMacNotice, useDeviceList } from './devices'
 import { Onboarding, needsOnboarding } from './onboarding'
 import { PairPanel } from './pair'
@@ -44,6 +45,8 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const [codeHint, setCodeHint] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [claim, setClaim] = useState<'idle' | 'pending' | 'done'>('idle')
+  // An existing member opened someone's invite: who asks to be a contact, until they say yes or no.
+  const [askAdd, setAskAdd] = useState<string | null>(null)
 
   useEffect(() => {
     setInvite(loadInvite())
@@ -87,6 +90,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
     claimInvite({ token: invite })
       .then((res) => {
         if (res.ok || res.error === 'bad-link') forgetInvite()
+        else if (res.error === 'confirm') setAskAdd(res.inviterName)
       })
       .catch(() => {})
       .finally(() => setClaim('done'))
@@ -204,6 +208,19 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
       <h1 className="vh">pingme</h1>
       {/* A Mac that joins the account can read every ping to it: never let that pass unseen. */}
       {home && shown === 'form' && myDevices && <NewMacNotice devices={myDevices} thisId={device.deviceId} now={now} />}
+      {home && shown === 'form' && askAdd && invite && (
+        <ContactRequest
+          name={askAdd}
+          onAnswer={async (yes) => {
+            if (yes) {
+              const res = await claimInvite({ token: invite, addContact: true })
+              if (!res.ok && res.error !== 'bad-link') return
+            }
+            setAskAdd(null)
+            forgetInvite()
+          }}
+        />
+      )}
       <div className="stage" data-phase={shown} aria-busy={waiting || busy || undefined}>
         <EmailPanel on={shown === 'email'} busy={busy || waiting} hint={emailHint} initialEmail={email} onSubmit={(a) => void sendCode(a)} />
         <CodePanel on={shown === 'code'} busy={busy || waiting} hint={codeHint} email={otpEmail ?? ''} onSubmit={verify} onBack={backToEmail} />
@@ -238,5 +255,44 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
         />
       )}
     </main>
+  )
+}
+
+export const ADD_CONTACT = 'Přidat do kontaktů?'
+
+/**
+ * Someone's invite reached a person who is already a member. Nothing happens until they answer:
+ * a link that adds its sender to your contacts on open would let anyone who knows your email in.
+ */
+export function ContactRequest({ name, onAnswer }: { name: string; onAnswer: (yes: boolean) => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  async function answer(yes: boolean) {
+    if (busy) return
+    setBusy(true)
+    try {
+      await onAnswer(yes)
+    } catch {
+      // Offline: the question stays, so it can be answered again.
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="dv-new" role="group" aria-label={`${ADD_CONTACT} ${name}`}>
+      <span className="dv-new-i">
+        <Icon name="user" size={18} />
+      </span>
+      <p className="dv-new-t">
+        <span>{ADD_CONTACT}</span> <b>{name}</b>
+      </p>
+      <span className="dv-new-a">
+        <button type="button" className="chip" onClick={() => void answer(true)} disabled={busy}>
+          Přidat
+        </button>
+        <button type="button" className="chip" onClick={() => void answer(false)} disabled={busy}>
+          Ne
+        </button>
+      </span>
+    </div>
   )
 }

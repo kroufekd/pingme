@@ -521,6 +521,53 @@ describe("invites and contacts", () => {
   })
 })
 
+describe("contact requests between members", () => {
+  test("an invite to someone already in asks first, and either side can end a contact", async () => {
+    const t = setup()
+    const V = await member(t, "Viki", "viki@example.com")
+    const M = await member(t, "Mallory", "mallory@example.com")
+    const link = async () => {
+      const made = await M.as.action(api.inviteLinks.create, { name: "Viki" })
+      if (!made.ok) throw new Error(made.error)
+      const token = new URL(made.url).searchParams.get("i")!
+      // Anyone who knows Viki's email can bind it to their link, without signing in as her.
+      expect(await t.mutation(api.inviteLinks.start, { token, email: "viki@example.com" })).toEqual({ ok: true })
+      return token
+    }
+    const names = async (as: As) => {
+      const r = await as.query(api.contacts.list, {})
+      if (r.status !== "member") throw new Error(r.status)
+      return r.contacts.map((c) => c.name)
+    }
+
+    // Opening it signed in only asks; nothing changes until she says yes.
+    const token = await link()
+    expect(await V.as.mutation(api.inviteLinks.claim, { token })).toEqual({ ok: false, error: "confirm", inviterName: "Mallory" })
+    expect(await names(V.as)).toEqual([])
+    expect(await names(M.as)).toEqual([])
+    expect(await V.as.mutation(api.inviteLinks.claim, { token, addContact: true })).toEqual({ ok: true, name: "Viki" })
+    expect(await names(V.as)).toEqual(["Mallory"])
+    expect(await names(M.as)).toEqual(["Viki"])
+
+    // Either side ends it, for both.
+    expect(await V.as.mutation(api.contacts.remove, { userId: M.userId })).toEqual({ ok: true })
+    expect(await names(M.as)).toEqual([])
+    expect(await V.as.mutation(api.contacts.remove, { userId: M.userId })).toEqual({ ok: false, error: "not-contact" })
+    expect(await V.as.mutation(api.contacts.remove, { userId: "nonsense" })).toEqual({ ok: false, error: "not-contact" })
+    const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "s@example.com" }))
+    expect(await t.withIdentity({ subject: `${strangerId}|s` }).mutation(api.contacts.remove, { userId: M.userId })).toEqual({ ok: false, error: "not-member" })
+
+    // The same from the Mac.
+    const again = await link()
+    expect(await V.as.mutation(api.inviteLinks.claim, { token: again, addContact: true })).toEqual({ ok: true, name: "Viki" })
+    const mac = await pairMac(t, V.as)
+    expect(await devJson(t, mac.token, "POST", "/device/contacts/remove", { userId: M.userId })).toEqual({ ok: true })
+    expect(await names(M.as)).toEqual([])
+    expect(await devJson(t, mac.token, "POST", "/device/contacts/remove", { userId: M.userId }, 404)).toEqual({ ok: false, error: "not-found" })
+    expect(await devJson(t, mac.token, "POST", "/device/contacts/remove", {}, 400)).toMatchObject({ ok: false })
+  })
+})
+
 describe("encrypted pings between members", () => {
   test("send, deliver, status, typing, reply: each side sees only its own ciphertext", async () => {
     const t = setup()

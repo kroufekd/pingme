@@ -238,6 +238,19 @@ export async function ensureContact(ctx: MutationCtx, x: Id<"users">, y: Id<"use
   return true
 }
 
+/** Ends a contact both ways. True when there was one. */
+export async function removeContact(ctx: MutationCtx, x: Id<"users">, y: Id<"users">) {
+  if (x === y) return false
+  const [a, b] = ordered(x, y)
+  const row = await ctx.db
+    .query("contacts")
+    .withIndex("by_a", (q) => q.eq("a", a).eq("b", b))
+    .first()
+  if (!row) return false
+  await ctx.db.delete(row._id)
+  return true
+}
+
 export async function contactIds(ctx: QueryCtx, userId: Id<"users">) {
   const asA = await ctx.db.query("contacts").withIndex("by_a", (q) => q.eq("a", userId)).take(500)
   const asB = await ctx.db.query("contacts").withIndex("by_b", (q) => q.eq("b", userId)).take(500)
