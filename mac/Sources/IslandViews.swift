@@ -1,4 +1,4 @@
-// The island: one black shape at the notch. Task, new task, waiting and people are its states.
+// The island: one black shape at the notch. Task, new task, waiting, people and pairing are its states.
 // Sizes, type, colors and motion follow the approved minimal design (design/v2/e-mac-minimal.html).
 // Default view is who, what and a check. Everything else waits behind hover, focus or a click.
 
@@ -38,9 +38,38 @@ struct IslandMetrics: Equatable {
     }
 }
 
-enum IslandMode: Equatable { case closed, task, compose, waiting, people }
+enum IslandMode: Equatable { case closed, task, compose, waiting, people, pair }
 
 enum PeopleLoad: Equatable { case idle, loading, loaded, failed(String) }
+
+/// One contact as the people state shows it.
+struct ContactRow: Identifiable, Equatable {
+    struct Key: Equatable {
+        var kind: String
+        var fingerprint: String
+    }
+
+    var id: String
+    var name: String
+    var hasMac: Bool
+    /// When a Mac of theirs last checked in, on this Mac's clock.
+    var lastSeen: Date?
+    var keys: [Key]
+
+    /// A Mac checked in during the last 5 minutes (same rule as the server and the web).
+    func online(at now: Date) -> Bool { hasMac && (lastSeen.map { now.timeIntervalSince($0) < 300 } ?? false) }
+
+    static func list(_ r: ContactsReply, now: Date = Date()) -> [ContactRow] {
+        r.contacts.map { c in
+            ContactRow(
+                id: c.userId, name: c.name, hasMac: c.hasMac,
+                lastSeen: c.macLastSeen.map { now.addingTimeInterval(($0 - r.now) / 1000) },
+                // Macs first: those are the keys pings are sealed to.
+                keys: c.devices.sorted { ($0.isMac ? 0 : 1) < ($1.isMac ? 0 : 1) }
+                    .compactMap { d in Net.fingerprint(d.publicKey).map { Key(kind: d.isMac ? "Mac" : "Web", fingerprint: $0) } })
+        }
+    }
+}
 
 @MainActor
 final class IslandModel: ObservableObject {
@@ -79,14 +108,20 @@ final class IslandModel: ObservableObject {
     @Published var laterRepeat = ""
     @Published var focusRequest = 0
     // People
-    @Published var people: [Sender] = []
+    @Published var contacts: [ContactRow] = []
+    @Published var invites: [Invite] = []
+    /// This Mac's key fingerprint, to compare with what the contact sees.
+    @Published var myKey: String?
+    /// The contact whose detail (fingerprints) is open.
+    @Published var openContact: String?
     @Published var peopleLoad: PeopleLoad = .idle
     @Published var personName = ""
     @Published var said = ""
-    /// The last invite or key went through: the note takes the place of the name row.
+    /// The last invite went through: the note takes the place of the name row.
     @Published var saidOK = false
-    @Published var shownKey: String?
     @Published var busy = false
+    // Pairing
+    @Published var pair: Pairing.State = .idle
     /// Snapshots only: which field draws focus and a caret ("reply", "title", "name").
     @Published var stillFocus: String?
 }
@@ -105,8 +140,10 @@ struct IslandActions {
     var switchTo: (IslandMode) -> Void = { _ in }
     var add: () -> Void = {}
     var invite: () -> Void = {}
-    var makeKey: () -> Void = {}
-    var revoke: (Sender) -> Void = { _ in }
+    var revokeInvite: (String) -> Void = { _ in }
+    var toggleContact: (String) -> Void = { _ in }
+    var pair: () -> Void = {}
+    var cancelPair: () -> Void = {}
 }
 
 private struct StillKey: EnvironmentKey { static let defaultValue = false }
@@ -258,6 +295,7 @@ struct IslandView: View {
             case .compose: ComposeCard(model: model, actions: actions)
             case .waiting: WaitingCard(model: model, actions: actions)
             case .people: PeopleCard(model: model, actions: actions)
+            case .pair: PairCard(model: model, actions: actions)
             case .closed: EmptyView()
             }
         }
@@ -343,7 +381,7 @@ struct EarsBar: View {
             ear(icon: "plus", label: "Nový úkol") { actions.switchTo(.compose) }
             Spacer(minLength: 0)
             ear(icon: "user", label: "Lidé") { actions.switchTo(.people) }
-        case .people:
+        case .people, .pair:
             listEar
             Spacer(minLength: 0)
             ear(icon: "plus", label: "Nový úkol") { actions.switchTo(.compose) }
@@ -607,7 +645,8 @@ struct TaskCard: View {
                         .font(Geist.font(15, 600))
                         .kerning(-0.15)
                         .lineSpacing(0.5)
-                        .foregroundStyle(Color.white)
+                        // A placeholder for text that did not decrypt: quieter than a real message.
+                        .foregroundStyle(task.unreadable == true ? Ink.on2 : Color.white)
                         // A finished session is a glance, not a read: three lines at most.
                         .lineLimit(task.isAgentSession ? 3 : nil)
                         .fixedSize(horizontal: false, vertical: true)
@@ -656,18 +695,37 @@ struct TaskCard: View {
                 Icon(name: "robot", size: 13, color: .white).opacity(0.8)
             }
             Text(whoText).lineLimit(1)
+            // Its own element that never shrinks: the server picks the name, it must not push this off.
+            if let marker = Self.marker(task) {
+                Text("· \(marker)")
+                    .foregroundStyle(Ink.urgency(.orange))
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
         }
         .font(Geist.font(12, 500))
         .foregroundStyle(Ink.on2)
         .frame(height: 16)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(task.kind == .agent ? "Od agenta \(task.fromName)" : "Od \(whoText)")
+        .accessibilityLabel(Self.whoLabel(task))
     }
 
-    private var whoText: String {
+    private var whoText: String { Self.whoText(task) }
+
+    static func whoText(_ task: TodoTask) -> String {
         if task.isAgentSession { return "Claude · \(task.fromName)" }
         if task.forAgent { return "\(task.fromName) pro agenta" }
+        // A ping an agent sent through someone's Mac: "Michal · agent".
+        if task.fromAgent != nil && task.fromUserId != nil { return "\(task.fromName) · agent" }
         return task.fromName
+    }
+
+    /// "nešifrované" on a legacy plaintext ping, nil otherwise.
+    static func marker(_ task: TodoTask) -> String? { task.plain == true ? Net.plainMarker : nil }
+
+    static func whoLabel(_ task: TodoTask) -> String {
+        let who = whoText(task) + (marker(task).map { ", \($0)" } ?? "")
+        return task.kind == .agent ? "Od agenta, \(who)" : "Od \(who)"
     }
 
     /// Odpovědět and 10 min, folded away until hover or keyboard focus.
@@ -1048,6 +1106,7 @@ private struct WaitingRowContent: View {
 
     static func sub(_ t: TodoTask, now: Date) -> String {
         var parts = [t.kind == .owner && t.source != "web" ? "ode mě" : t.createdByName]
+        if let m = TaskCard.marker(t) { parts.append(m) }
         if t.isSnoozed(at: now) { parts.append("odloženo") }
         if let r = t.repeat.flatMap(Recurrence.label) { parts.append(r.prefix(1).lowercased() + r.dropFirst()) }
         return parts.joined(separator: ", ")
@@ -1093,17 +1152,35 @@ struct PeopleCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                if model.people.isEmpty {
+                if model.contacts.isEmpty && model.invites.isEmpty {
                     QuietLine(text: emptyText)
                 } else {
-                    ForEach(model.people, id: \.id) { s in
-                        ListRow(id: s.id, model: model, focused: $focused, focusable: false) { lit in
-                            PersonRowContent(sender: s, lit: lit, onRemove: { actions.revoke(s) }, focused: $focused)
+                    ForEach(model.contacts) { c in
+                        ListRow(id: c.id, model: model, focused: $focused, focusable: true) { lit in
+                            ContactRowContent(contact: c, now: model.now, lit: lit, open: model.openContact == c.id)
+                        }
+                        .onTapGesture { actions.toggleContact(c.id) }
+                        .onKeyPress(.return) { actions.toggleContact(c.id); return .handled }
+                        .onKeyPress(.space) { actions.toggleContact(c.id); return .handled }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(ContactRowContent.label(c, now: model.now))
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Otisk klíče")
+                        .accessibilityAction(.default) { actions.toggleContact(c.id) }
+                        if model.openContact == c.id {
+                            KeyDetail(contact: c, mine: model.myKey)
+                                .transition(.opacity)
+                        }
+                    }
+                    ForEach(model.invites) { i in
+                        ListRow(id: i.id, model: model, focused: $focused, focusable: false) { lit in
+                            InviteRowContent(invite: i, lit: lit, onRemove: { actions.revokeInvite(i.id) }, focused: $focused)
                         }
                     }
                 }
             }
             .padding(.top, 4)
+            .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.openContact)
             if model.saidOK && !model.said.isEmpty {
                 saidNote
             } else {
@@ -1133,102 +1210,158 @@ struct PeopleCard: View {
                     .disabled(model.busy)
                     .accessibilityLabel("Pozvat, zkopíruje odkaz")
                     .transition(.opacity)
-                Button(action: actions.makeKey) { QLabel(icon: "key", text: "Klíč") }
-                    .buttonStyle(QStyle())
-                    .disabled(model.busy)
-                    .accessibilityLabel("Klíč pro agenta, zkopíruje ho")
-                    .transition(.opacity)
             }
         }
         .frame(height: 32)
         .padding(.top, 4)
     }
 
-    /// Shown once after an invite or a key, in place of the name row.
+    /// Shown once after an invite, in place of the name row.
     private var saidNote: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let key = model.shownKey {
-                Text(key)
-                    .font(Geist.mono(10.5))
-                    .foregroundStyle(Ink.on)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(minHeight: 16.2, alignment: .leading)
-                    .textSelection(.enabled)
-                    .accessibilityLabel("Klíč \(key)")
-            }
-            Text(model.said)
-                .font(Geist.font(12))
-                .foregroundStyle(Ink.on2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(minHeight: 16.2, alignment: .leading)
-        }
-        .padding(.top, 6)
-        .accessibilityElement(children: .combine)
+        Text(model.said)
+            .font(Geist.font(12))
+            .foregroundStyle(Ink.on2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 16.2, alignment: .leading)
+            .padding(.top, 6)
     }
 
     private var emptyText: String {
         switch model.peopleLoad {
         case .idle, .loading: return "Načítám..."
         case .failed(let m): return m
-        case .loaded: return "Zatím nikdo. Napiš jméno a pozvi ho nebo vydej klíč."
+        case .loaded: return "Zatím nikdo. Napiš jméno a pozvi ho."
         }
     }
 }
 
-private struct PersonRowContent: View {
-    let sender: Sender
+/// Online (a Mac checked in during the last 5 minutes), offline, or no Mac at all (hollow).
+private struct OnlineDot: View {
+    let online: Bool
+    let hasMac: Bool
+
+    var body: some View {
+        Group {
+            if hasMac {
+                Circle().fill(online ? Ink.urgency(.green) : Ink.edge)
+            } else {
+                Circle().strokeBorder(Ink.edge, lineWidth: 1.2)
+            }
+        }
+        .frame(width: 8, height: 8)
+        .frame(width: 14)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ContactRowContent: View {
+    let contact: ContactRow
+    let now: Date
+    let lit: Bool
+    let open: Bool
+
+    static func detail(_ c: ContactRow, now: Date) -> String {
+        if !c.hasMac { return "nemá appku" }
+        if c.online(at: now) { return "online" }
+        return c.lastSeen.map { Fmt.ago($0, now: now) } ?? "offline"
+    }
+
+    static func label(_ c: ContactRow, now: Date) -> String { "\(c.name), \(detail(c, now: now))" }
+
+    var body: some View {
+        OnlineDot(online: contact.online(at: now), hasMac: contact.hasMac)
+        Text(contact.name)
+            .font(Geist.font(13, 550))
+            .foregroundStyle(contact.hasMac ? Ink.on : Ink.on2)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .layoutPriority(1)
+        Text(Self.detail(contact, now: now))
+            .foregroundStyle(Ink.on3)
+            .lineLimit(1)
+            .opacity(lit || open ? 1 : 0)
+        Spacer(minLength: 0)
+        Icon(name: "key", size: 13, color: .white)
+            .opacity(lit || open ? 0.6 : 0)
+    }
+}
+
+/// Key fingerprints of a contact's devices and of this Mac. Both people open each other's detail
+/// and read the same numbers.
+private struct KeyDetail: View {
+    let contact: ContactRow
+    let mine: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if contact.keys.isEmpty {
+                line("", "Žádné zařízení")
+            }
+            ForEach(Array(contact.keys.prefix(4).enumerated()), id: \.offset) { _, k in
+                line(k.kind, k.fingerprint)
+            }
+            if let mine { line("Tento Mac", mine) }
+        }
+        .padding(.leading, 24)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Otisky klíčů")
+    }
+
+    private func line(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(Geist.font(12, 500))
+                .foregroundStyle(Ink.on3)
+                .frame(width: 64, alignment: .leading)
+            Text(value)
+                .font(Geist.mono(12))
+                .foregroundStyle(Ink.on2)
+                .textSelection(.enabled)
+        }
+        .frame(minHeight: 18)
+    }
+}
+
+private struct InviteRowContent: View {
+    let invite: Invite
     let lit: Bool
     let onRemove: () -> Void
     @FocusState.Binding var focused: String?
 
-    private var invited: Bool { sender.status == "invited" }
-    private var icon: String { sender.kind == "agent" ? "robot" : (invited ? "link" : "user") }
-
     private var detail: String {
-        if sender.kind == "agent" { return sender.keyTail.map { "klíč ...\($0)" } ?? "klíč" }
-        if invited { return sender.inviteExpiresAt.map { "do \(Fmt.day(Date(ms: $0)))" } ?? "pozvánka" }
-        return sender.email ?? ""
-    }
-
-    private var kindLabel: String { sender.kind == "agent" ? "agent" : (invited ? "pozvánka" : "člověk") }
-
-    private var removeLabel: String {
-        if sender.kind == "agent" { return "Zrušit klíč \(sender.name)" }
-        if invited { return "Zrušit pozvánku pro \(sender.name)" }
-        return "Odebrat \(sender.name)"
+        if let email = invite.email, !email.isEmpty { return email }
+        return invite.expiresAt.map { "do \(Fmt.day(Date(ms: $0)))" } ?? "pozvánka"
     }
 
     var body: some View {
-        let show = lit || focused == sender.id
+        let show = lit || focused == invite.id
         HStack(spacing: 10) {
-            Icon(name: icon, size: 14, color: .white).opacity(0.7)
-            Text(sender.name)
+            Icon(name: "link", size: 14, color: .white).opacity(0.7).frame(width: 14)
+            Text(invite.name)
                 .font(Geist.font(13, 550))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
-            if !detail.isEmpty {
-                Text(detail)
-                    .foregroundStyle(Ink.on3)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .opacity(invited || show ? 1 : 0)
-            }
+            Text(detail)
+                .foregroundStyle(Ink.on3)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([sender.name, kindLabel, detail].filter { !$0.isEmpty }.joined(separator: ", "))
+        .accessibilityLabel("\(invite.name), pozvánka, \(detail)")
         Spacer(minLength: 0)
         Button(action: onRemove) { Icon(name: "x", size: 12, color: .white) }
             .buttonStyle(RemoveStyle(visible: show))
-            .focused($focused, equals: sender.id)
-            .accessibilityLabel(removeLabel)
-            .help(removeLabel)
+            .focused($focused, equals: invite.id)
+            .accessibilityLabel("Zrušit pozvánku pro \(invite.name)")
+            .help("Zrušit pozvánku")
             .padding(.trailing, -5)
     }
 }
 
-/// The x at the end of a person row: hidden until the row is hovered or focused.
+/// The x at the end of an invite row: hidden until the row is hovered or focused.
 private struct RemoveStyle: ButtonStyle {
     let visible: Bool
     func makeBody(configuration: Configuration) -> some View { RemoveBody(config: configuration, visible: visible) }
@@ -1249,5 +1382,138 @@ private struct RemoveBody: View {
             .opacity(visible || focused ? 1 : 0)
             .onHover { hover = $0 }
             .animation(.easeOut(duration: 0.2), value: visible)
+    }
+}
+
+// MARK: - Pairing
+
+/// "Připojit tento Mac": one button. Then a quiet wait for the browser, with a way out.
+struct PairCard: View {
+    @ObservedObject var model: IslandModel
+    let actions: IslandActions
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch model.pair {
+            case .idle, .failed:
+                HStack(spacing: 10) {
+                    Button(action: actions.pair) { Text("Připojit tento Mac") }
+                        .buttonStyle(PrimaryStyle())
+                        .accessibilityHint("Otevře prohlížeč, kde Mac potvrdíš")
+                    if case .failed(let why) = model.pair {
+                        Text(why)
+                            .font(Geist.font(12))
+                            .foregroundStyle(Ink.on2)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            case .starting, .waiting:
+                HStack(spacing: 10) {
+                    Waiting()
+                    if case .waiting(let code) = model.pair {
+                        HStack(spacing: 8) {
+                            Text("Kód do prohlížeče")
+                                .font(Geist.font(13, 550))
+                                .foregroundStyle(Ink.on2)
+                                .lineLimit(1)
+                                .fixedSize()
+                            Text("\(code.prefix(3)) \(code.suffix(3))")
+                                .font(Geist.mono(17))
+                                .foregroundStyle(Ink.on)
+                                .monospacedDigit()
+                                .fixedSize()
+                                .textSelection(.enabled)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Kód do prohlížeče: \(code.map(String.init).joined(separator: " "))")
+                    } else {
+                        Text("Otevírám prohlížeč")
+                            .font(Geist.font(13, 550))
+                            .foregroundStyle(Ink.on)
+                    }
+                    Spacer(minLength: 0)
+                    if case .waiting = model.pair {
+                        Button(action: actions.pair) { Icon(name: "open", size: 12, color: .white) }
+                            .buttonStyle(RoundStyle(size: 28, kind: .quiet(expanded: false)))
+                            .help("Otevřít stránku znovu")
+                            .accessibilityLabel("Otevřít stránku znovu")
+                    }
+                    Button(action: actions.cancelPair) { Icon(name: "x", size: 12, color: .white) }
+                        .buttonStyle(RoundStyle(size: 28, kind: .quiet(expanded: false)))
+                        .accessibilityLabel("Zrušit připojení")
+                        .help("Zrušit")
+                }
+                .frame(height: 32)
+            case .done(let name):
+                HStack(spacing: 10) {
+                    Dot(color: Ink.urgency(.green))
+                    Text(name.isEmpty ? "Připojeno" : "Připojeno, \(name)")
+                        .font(Geist.font(13, 550))
+                        .foregroundStyle(Ink.on)
+                }
+                .frame(height: 32)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+        .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.pair)
+    }
+}
+
+/// The white pill: the one main action of a state.
+struct PrimaryStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { PrimaryBody(config: configuration) }
+}
+
+private struct PrimaryBody: View {
+    let config: ButtonStyle.Configuration
+    @State private var hover = false
+    @Environment(\.isFocused) private var focused
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        config.label
+            .font(Geist.font(13, 600))
+            .foregroundStyle(Color.black)
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .frame(height: 32)
+            .background(Capsule().fill(Ink.on.opacity(hover ? 0.88 : 1)))
+            .contentShape(Capsule())
+            .modifier(FocusRing(shape: Capsule(), on: focused))
+            .scaleEffect(config.isPressed && !reduceMotion ? 0.96 : 1)
+            .onHover { hover = $0 }
+            .animation(.easeOut(duration: 0.2), value: hover)
+            .animation(islandSpring(reduceMotion, 0.3), value: config.isPressed)
+    }
+}
+
+/// Three dots that breathe while the browser is open. Still in snapshots and with reduced motion.
+private struct Waiting: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.islandStill) private var still
+
+    var body: some View {
+        Group {
+            if reduceMotion || still {
+                dots { _ in 0.7 }
+            } else {
+                TimelineView(.animation(minimumInterval: 1 / 30)) { ctx in
+                    let t = ctx.date.timeIntervalSinceReferenceDate
+                    dots { i in 0.35 + 0.65 * (0.5 + 0.5 * sin((t * 4) - Double(i) * 0.9)) }
+                }
+            }
+        }
+        .frame(width: 22, height: 8)
+        .accessibilityHidden(true)
+    }
+
+    private func dots(_ alpha: @escaping (Int) -> Double) -> some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { i in Circle().fill(Ink.on.opacity(alpha(i))).frame(width: 5, height: 5) }
+        }
     }
 }

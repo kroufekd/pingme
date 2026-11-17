@@ -1,5 +1,5 @@
-// Tasks, the local store and what goes over the wire.
-// Tasks are stored only here, on the Mac. The server is a queue, a short-lived snapshot and statuses.
+// Tasks, the local store and the outbox of statuses and replies.
+// Tasks are stored only here, on the Mac. The server relays sealed pings, statuses and sealed replies.
 
 import Foundation
 
@@ -12,19 +12,27 @@ let kReplyChips = ["Jdu na to", "Za chvíli", "Teď nemůžu"]
 
 // MARK: - Config
 
+/// Where the app talks to. No secrets here: the device token lives in the Keychain (Keychain.swift).
 struct AppConfig: Codable {
-    var api: String
-    var token: String
-    var web: String
+    var api: String?
+    var web: String?
     var convex: String?
 
+    static let defaultAPI = "https://proficient-labrador-100.api.macaly.app"
+    static let defaultWeb = "https://pingme.macaly.app"
     static let defaultConvex = "https://proficient-labrador-100.eu-west-1.convex.cloud"
-    var convexURL: String { (convex?.isEmpty == false ? convex : nil) ?? Self.defaultConvex }
 
-    static func load() -> AppConfig? {
+    private static func pick(_ v: String?, _ fallback: String) -> String { (v?.isEmpty == false ? v : nil) ?? fallback }
+    var apiURL: String { Self.pick(api, Self.defaultAPI) }
+    var webURL: String { Self.pick(web, Self.defaultWeb) }
+    var convexURL: String { Self.pick(convex, Self.defaultConvex) }
+
+    /// config.json in the app bundle (build.sh writes it); the defaults when there is none (dev builds).
+    static func load() -> AppConfig {
         guard let url = Bundle.main.url(forResource: "config", withExtension: "json"),
-              let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(AppConfig.self, from: data)
+              let data = try? Data(contentsOf: url),
+              let c = try? JSONDecoder().decode(AppConfig.self, from: data) else { return AppConfig() }
+        return c
     }
 }
 
@@ -89,6 +97,15 @@ struct TodoTask: Codable, Identifiable, Equatable {
     var report: String? = nil
     /// running, done or failed.
     var triage: String? = nil
+    // Network. The ping's sender and recipient, as the AAD of its reply needs them.
+    var fromUserId: String? = nil
+    var toUserId: String? = nil
+    /// The agent that sent it ("Claude Code"), when an agent did.
+    var fromAgent: String? = nil
+    /// Legacy remote MCP: the reply goes back as plaintext.
+    var plain: Bool? = nil
+    /// The text could not be decrypted on this Mac; the title is a placeholder.
+    var unreadable: Bool? = nil
 
     var id: String { _id }
     var showAt: Date { Date(ms: max(dueAt, snoozedUntil ?? 0)) }
@@ -121,60 +138,7 @@ struct TodoTask: Codable, Identifiable, Equatable {
     }
 }
 
-// MARK: - Wire types
-
-/// A message from a sender, waiting on the server until the Mac confirms it.
-struct RemoteCommand: Codable {
-    var id: String
-    var kind: String            // create, done, delete
-    var taskId: String?
-    var title: String?
-    var dueAt: Double?
-    var followUpTitle: String?
-    var followUpMinutes: Double?
-    var `repeat`: String?
-    var byName: String
-    var createdAt: Double
-    var senderId: String?
-    var senderKind: String?
-    var urgency: String?
-    var to: String?
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        kind = try c.decode(String.self, forKey: .kind)
-        taskId = try? c.decodeIfPresent(String.self, forKey: .taskId)
-        title = try? c.decodeIfPresent(String.self, forKey: .title)
-        dueAt = try? c.decodeIfPresent(Double.self, forKey: .dueAt)
-        followUpTitle = try? c.decodeIfPresent(String.self, forKey: .followUpTitle)
-        followUpMinutes = try? c.decodeIfPresent(Double.self, forKey: .followUpMinutes)
-        `repeat` = try? c.decodeIfPresent(String.self, forKey: .repeat)
-        byName = (try? c.decodeIfPresent(String.self, forKey: .byName)) ?? ""
-        createdAt = (try? c.decodeIfPresent(Double.self, forKey: .createdAt)) ?? Date().ms
-        senderId = try? c.decodeIfPresent(String.self, forKey: .senderId)
-        senderKind = try? c.decodeIfPresent(String.self, forKey: .senderKind)
-        urgency = try? c.decodeIfPresent(String.self, forKey: .urgency)
-        to = try? c.decodeIfPresent(String.self, forKey: .to)
-    }
-}
-
-/// What `macFeed:get` returns. Decoded leniently: a decode error would end the subscription.
-struct FeedValue: Decodable {
-    var ok: Bool
-    var commands: [RemoteCommand]
-    var webLastSeen: Double?
-
-    private enum K: String, CodingKey { case ok, commands, webLastSeen }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: K.self)
-        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? false
-        webLastSeen = try? c.decodeIfPresent(Double.self, forKey: .webLastSeen)
-        let lossy = (try? c.decodeIfPresent([Lossy<RemoteCommand>].self, forKey: .commands)) ?? []
-        commands = lossy.compactMap(\.value)
-    }
-}
+// MARK: - Outbox
 
 /// Decodes one element of an array without failing the whole array.
 struct Lossy<T: Decodable>: Decodable {
@@ -182,22 +146,9 @@ struct Lossy<T: Decodable>: Decodable {
     init(from decoder: Decoder) throws { value = try? T(from: decoder) }
 }
 
-struct SyncReply: Decodable {
-    var now: Double?
-    var watching: Bool
-    var commands: [RemoteCommand]
-
-    private enum K: String, CodingKey { case now, watching, commands }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: K.self)
-        now = try? c.decodeIfPresent(Double.self, forKey: .now)
-        watching = (try? c.decodeIfPresent(Bool.self, forKey: .watching)) ?? false
-        commands = ((try? c.decodeIfPresent([Lossy<RemoteCommand>].self, forKey: .commands)) ?? []).compactMap(\.value)
-    }
-}
-
-/// One status change for a sender's task. Kept in a persisted outbox until the server answers 200.
+/// One status change or reply for a ping. Kept in a persisted outbox until the server takes it.
+/// Statuses go with /device/sync; a reply is sealed only when it is sent (/device/reply), so the
+/// plaintext waits here, on this Mac, like the task itself.
 struct StatusEvent: Codable, Equatable {
     var uid: String
     var taskRef: String
@@ -205,64 +156,19 @@ struct StatusEvent: Codable, Equatable {
     var at: Double
     var snoozedUntil: Double?
     var reply: String?
+    // The ping's sender and recipient (the reply's AAD), and whether it is a legacy plaintext ping.
+    var from: String? = nil
+    var to: String? = nil
+    var plain: Bool? = nil
 
-    var wire: WireStatus { WireStatus(taskRef: taskRef, status: status, at: at, snoozedUntil: snoozedUntil, reply: reply) }
-}
+    var isReply: Bool { status == "replied" }
 
-struct WireStatus: Encodable {
-    var taskRef: String
-    var status: String
-    var at: Double
-    var snoozedUntil: Double?
-    var reply: String?
-}
-
-/// How a task is shown to the web while someone has it open.
-struct SharedTask: Encodable {
-    var id: String
-    var title: String
-    var dueAt: Double
-    var showAt: Double
-    var byName: String
-    var source: String
-    var doneAt: Double?
-    var snoozeCount: Int
-    var followUpTitle: String?
-    var followUpMinutes: Double?
-    var followsFrom: String?
-    var `repeat`: String?
-    // Owner tasks leave out senderId, senderKind and taskRef.
-    var senderId: String?
-    var senderKind: String?
-    var urgency: String
-    var to: String?
-    var taskRef: String?
-    var reply: String?
-    var replyAt: Double?
-    var seenAt: Double?
-    var snoozedUntil: Double?
-}
-
-struct TypingBody: Encodable { var taskRef: String }
-
-struct SyncBody: Encodable {
-    var ack: [String]
-    var tasks: [SharedTask]?
-    var statuses: [WireStatus]?
-    var typing: TypingBody?
-}
-
-/// A person, invite or agent key, as `/mac/senders` lists it.
-struct Sender: Decodable, Identifiable, Equatable {
-    var id: String
-    var kind: String
-    var name: String
-    var status: String
-    var email: String?
-    var keyTail: String?
-    var inviteExpiresAt: Double?
-    var lastUsedAt: Double?
-    var createdAt: Double?
+    /// What /device/sync takes.
+    var wire: [String: Any] {
+        var w: [String: Any] = ["ref": taskRef, "status": status, "at": at]
+        if status == "snoozed", let s = snoozedUntil { w["snoozedUntil"] = s }
+        return w
+    }
 }
 
 // MARK: - Repeating tasks
@@ -418,7 +324,8 @@ final class TaskStore: ObservableObject {
     private func emit(_ t: TodoTask, _ status: String, snoozedUntil: Double? = nil, reply: String? = nil) {
         guard let ref = t.taskRef else { return }
         outbox.append(StatusEvent(uid: UUID().uuidString, taskRef: ref, status: status, at: stamp(),
-                                  snoozedUntil: snoozedUntil, reply: reply))
+                                  snoozedUntil: snoozedUntil, reply: reply, from: t.fromUserId, to: t.toUserId,
+                                  plain: t.plain))
     }
 
     private func update(_ id: String, _ change: (inout TodoTask) -> Void) -> TodoTask? {
@@ -491,7 +398,8 @@ final class TaskStore: ObservableObject {
                 source: t.source, createdByName: t.createdByName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
                 followUpTitle: t.followUpTitle, followUpMinutes: t.followUpMinutes, followsFrom: nil, repeat: rule,
                 senderId: t.senderId, senderKind: t.senderKind, urgency: t.urgency, taskRef: t.taskRef,
-                stage: t.taskRef == nil ? nil : "waiting")
+                stage: t.taskRef == nil ? nil : "waiting", fromUserId: t.fromUserId, toUserId: t.toUserId,
+                fromAgent: t.fromAgent, plain: t.plain)
             pending.append(n)
             emit(n, "waiting")
         }
@@ -525,44 +433,37 @@ final class TaskStore: ObservableObject {
         commit()
     }
 
-    /// Applies server messages and saves them before they are confirmed. Returns true when something changed.
-    func receive(_ commands: [RemoteCommand]) -> Bool {
-        guard !commands.isEmpty else { return false }
+    /// Stores opened pings before they are acked. Returns true when something changed.
+    /// A ping that does not open is stored and acked too: it will never become readable.
+    func receive(_ pings: [IncomingPing]) -> Bool {
+        guard !pings.isEmpty else { return false }
         var changed = false
-        for c in commands {
-            if !acks.contains(c.id) { acks.append(c.id) }
-            guard !seen.contains(c.id) else { continue }
-            seen.append(c.id)
+        for p in pings {
+            if !acks.contains(p.ref) { acks.append(p.ref) }
+            guard !seen.contains(p.ref) else { continue }
+            seen.append(p.ref)
             changed = true
-            switch c.kind {
-            case "create":
-                guard let raw = c.title, !raw.isEmpty, !pending.contains(where: { $0.id == c.id }) else { continue }
-                let kind = c.senderKind.flatMap { $0 == "person" || $0 == "agent" ? $0 : nil }
-                pending.append(TodoTask(
-                    _id: c.id, title: String(raw.prefix(kTitleMax)), dueAt: c.dueAt ?? Date().ms, createdAt: c.createdAt,
-                    source: "web", createdByName: c.byName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
-                    followUpTitle: c.followUpTitle, followUpMinutes: c.followUpMinutes, followsFrom: nil,
-                    repeat: Recurrence.valid(c.repeat),
-                    senderId: c.senderId, senderKind: kind,
-                    urgency: (Urgency(rawValue: c.urgency ?? "") ?? .green).rawValue,
-                    // The command id is the taskRef. Only tasks from a known sender report back.
-                    taskRef: c.senderId == nil ? nil : c.id,
-                    to: c.to == "agent" ? "agent" : nil,
-                    triage: c.to == "agent" ? "running" : nil))
-            case "done":
-                if let id = c.taskId, pending.contains(where: { $0.id == id }) { markDone(id) }
-            case "delete":
-                if let id = c.taskId { pending.removeAll { $0.id == id } }
-            default:
-                break
-            }
+            guard !pending.contains(where: { $0.id == p.ref || $0.taskRef == p.ref }) else { continue }
+            pending.append(TodoTask(
+                _id: p.ref, title: String(p.title.prefix(kTitleMax)), dueAt: p.dueAt, createdAt: p.createdAt,
+                source: "web", createdByName: p.fromName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
+                followUpTitle: nil, followUpMinutes: nil, followsFrom: nil,
+                repeat: Recurrence.valid(p.repeat),
+                senderId: p.fromUserId, senderKind: p.fromAgent == nil ? "person" : "agent",
+                urgency: (Urgency(rawValue: p.urgency) ?? .green).rawValue,
+                taskRef: p.ref,
+                to: p.forAgent ? "agent" : nil,
+                // Nothing to triage in a placeholder.
+                triage: p.forAgent && !p.unreadable ? "running" : nil,
+                fromUserId: p.fromUserId, toUserId: p.toUserId, fromAgent: p.fromAgent,
+                plain: p.plain ? true : nil, unreadable: p.unreadable ? true : nil))
         }
         if seen.count > 500 { seen.removeFirst(seen.count - 500) }
         commit()
         return changed
     }
 
-    /// The server deleted these messages, no need to confirm them again.
+    /// The server took these acks, no need to send them again.
     func confirmed(_ ids: [String]) {
         guard !ids.isEmpty else { return }
         acks.removeAll { ids.contains($0) }
@@ -620,22 +521,5 @@ final class TaskStore: ObservableObject {
             if let session { $0.agentSession = session }
         }
         commit()
-    }
-
-    func shared() -> [SharedTask] {
-        // Finished Claude Code sessions stay on this Mac.
-        (pending + done).filter { !$0.isAgentSession }.map { t in
-            let sender = t.kind != .owner && t.senderId != nil
-            return SharedTask(
-                id: t.id, title: t.title, dueAt: t.dueAt, showAt: t.showAt.ms, byName: t.createdByName,
-                source: ["web", "mac", "followup"].contains(t.source) ? t.source : "mac",
-                doneAt: t.doneAt, snoozeCount: t.snoozeCount,
-                followUpTitle: t.followUpTitle, followUpMinutes: t.followUpMinutes, followsFrom: t.followsFrom,
-                repeat: t.repeat,
-                senderId: sender ? t.senderId : nil, senderKind: sender ? t.senderKind : nil,
-                urgency: t.level.rawValue, to: t.forAgent ? "agent" : nil, taskRef: sender ? t.taskRef : nil,
-                reply: t.reply, replyAt: t.replyAt, seenAt: t.seenAt,
-                snoozedUntil: t.isSnoozed(at: Date()) ? t.snoozedUntil : nil)
-        }
     }
 }

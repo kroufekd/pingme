@@ -12,10 +12,14 @@ enum SnapshotState: String, CaseIterable {
     case replyOpen = "reply-open", replyTyping = "reply-typing", replySent = "reply-sent"
     case newEmpty = "new-empty", new, newLater = "new-later"
     case waiting, waitingHover = "waiting-hover"
-    case people, peopleHover = "people-hover", peopleAdd = "people-add", peopleKey = "people-key"
+    case people, peopleHover = "people-hover", peopleAdd = "people-add"
     // Extra checks, not frames of the design.
     case taskOwnerHover = "task-owner-hover"
     case agentDone = "agent-done", agentReply = "agent-reply", agentTriage = "agent-triage"
+    // The network (phase 2).
+    case peopleDetail = "people-detail", peopleInvited = "people-invited", peopleEmpty = "people-empty"
+    case pair, pairing, pairFailed = "pair-failed", pairDone = "pair-done"
+    case taskUnreadable = "task-unreadable", taskPlain = "task-plain"
 
     /// Height of the desktop slice, as in the design (`--h`).
     var deskHeight: CGFloat {
@@ -23,7 +27,9 @@ enum SnapshotState: String, CaseIterable {
         case .idle, .idleHover, .idleWaiting, .idleWaitingHover: return 120
         case .replyOpen, .replyTyping, .replySent, .newLater: return 210
         case .waiting, .waitingHover: return 230
-        case .people, .peopleHover, .peopleAdd, .peopleKey: return 260
+        case .people, .peopleHover, .peopleAdd, .peopleInvited: return 260
+        case .peopleDetail: return 320
+        case .peopleEmpty, .pair, .pairing, .pairFailed, .pairDone: return 150
         case .agentTriage: return 270
         case .agentDone, .agentReply: return 210
         default: return 180
@@ -107,14 +113,26 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.shown = .task
         model.hover = true
         model.current = t
-    case .taskGreen, .taskOrange, .taskRed, .taskAgent, .taskHover, .replyOpen, .replyTyping, .replySent, .taskOwnerHover:
+    case .taskGreen, .taskOrange, .taskRed, .taskAgent, .taskHover, .replyOpen, .replyTyping, .replySent, .taskOwnerHover,
+         .taskUnreadable, .taskPlain:
         var t: TodoTask
         switch state {
         case .taskGreen: t = sample("Až budeš mít chvilku, zavolej", from: "Máma", kind: .person, urgency: .green, showAt: now)
         case .taskOrange: t = sample("Pošli mi fotky z hor", from: "Franta", kind: .person, urgency: .orange, showAt: now)
         case .taskAgent:
-            t = sample("PR s pozvánkami je hotový, mrkni na preview", from: "Claude Code - macaly", kind: .agent,
+            t = sample("PR s pozvánkami je hotový, mrkni na preview", from: "Michal", kind: .agent,
                        urgency: .green, showAt: now.addingTimeInterval(-70))
+            t.fromAgent = "Claude Code"
+            t.fromUserId = "u-michal"
+        case .taskUnreadable:
+            t = sample(Net.unreadableTitle, from: "Viki", kind: .person, urgency: .orange, showAt: now)
+            t.unreadable = true
+        case .taskPlain:
+            // Legacy remote MCP, with a long name: the marker must stay visible.
+            t = sample("Mrkni na build, padá na testech", from: "Claude Code - macaly-web, větev s pozvánkami",
+                       kind: .agent, urgency: .orange, showAt: now)
+            t.fromAgent = "mcp"
+            t.plain = true
         case .taskOwnerHover: t = sample("Zalít kytky", from: "", kind: .owner, urgency: .orange, showAt: now, repeat: "weekly")
         default: t = viki
         }
@@ -153,28 +171,46 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             sample("Zalít kytky", from: "", kind: .owner, urgency: .green, showAt: at(days: 5, 10, 0), repeat: "weekly"),
         ]
         if state == .waitingHover { model.hoverRow = first.id }
-    case .people, .peopleHover, .peopleAdd, .peopleKey:
+    case .people, .peopleHover, .peopleAdd, .peopleDetail, .peopleInvited, .peopleEmpty:
         model.mode = .people
         model.shown = .people
         model.peopleLoad = .loaded
-        model.people = [
-            Sender(id: "1", kind: "person", name: "Viki", status: "active", email: "viki@example.com"),
-            Sender(id: "2", kind: "person", name: "Franta", status: "active", email: "franta@example.com"),
-            Sender(id: "3", kind: "person", name: "Kuba", status: "invited",
-                   inviteExpiresAt: now.addingTimeInterval(7 * 86400).ms),
-            Sender(id: "4", kind: "agent", name: "Claude Code - macaly", status: "active", keyTail: "x4Tq"),
-        ]
+        // Made-up keys: fingerprints come out the same on every run.
+        func key(_ b: UInt8) -> String { Data(repeating: b, count: 32).base64EncodedString() }
+        func row(_ id: String, _ name: String, mac: Bool, seen: TimeInterval?, keys: [(String, UInt8)]) -> ContactRow {
+            ContactRow(id: id, name: name, hasMac: mac, lastSeen: seen.map { now.addingTimeInterval(-$0) },
+                       keys: keys.compactMap { k in Net.fingerprint(key(k.1)).map { ContactRow.Key(kind: k.0, fingerprint: $0) } })
+        }
+        if state != .peopleEmpty {
+            model.contacts = [
+                row("1", "Michal", mac: true, seen: 40, keys: [("Mac", 1), ("Web", 2)]),
+                row("2", "Franta", mac: true, seen: 3 * 3600, keys: [("Mac", 3)]),
+                row("3", "Viki", mac: false, seen: nil, keys: [("Web", 4)]),
+            ]
+            model.invites = [Invite(inviteId: "i1", name: "Kuba", email: nil, expiresAt: now.addingTimeInterval(7 * 86400).ms)]
+        }
+        model.myKey = Net.fingerprint(key(9))
         if state == .peopleHover { model.hoverRow = "2" }
+        if state == .peopleDetail {
+            model.openContact = "1"
+            model.hoverRow = "1"
+        }
         if state == .peopleAdd {
             model.personName = "Máma"
             model.stillFocus = "name"
         }
-        if state == .peopleKey {
-            model.people.append(Sender(id: "5", kind: "agent", name: "Codex", status: "active", keyTail: "cIkB"))
-            model.hoverRow = "5"
-            model.shownKey = "uk_demo_000000000000000000000000000000000000000"
-            model.said = "Zkopírováno, uvidíš ho jen teď."
+        if state == .peopleInvited {
+            model.said = "Odkaz zkopírován, platí 7 dní."
             model.saidOK = true
+        }
+    case .pair, .pairing, .pairFailed, .pairDone:
+        model.mode = .pair
+        model.shown = .pair
+        switch state {
+        case .pairing: model.pair = .waiting("309365")
+        case .pairFailed: model.pair = .failed("Vypršelo, zkus to znovu.")
+        case .pairDone: model.pair = .done("Michal")
+        default: model.pair = .idle
         }
     }
 }

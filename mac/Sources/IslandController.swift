@@ -55,6 +55,7 @@ final class IslandController {
     private let sync: SyncEngine
     private let presence: Presence
     private let bridge: AgentBridge
+    private let pairing: Pairing
     private var panel: IslandPanel?
     private var screenKey = ""
     /// Top center of the island in screen coordinates.
@@ -78,19 +79,39 @@ final class IslandController {
     /// While the island narrows after a peek, the window keeps its wide size.
     private var peekSettleAt = Date.distantPast
     private var heightSub: AnyCancellable?
+    private var typingSub: AnyCancellable?
+    private var peopleAt = Date.distantPast
     /// Something changed in the store: sync and refresh the menu bar.
     var onChange: (() -> Void)?
+    /// This Mac is connected to an account. Without it the island offers "Připojit tento Mac"
+    /// in place of people; local tasks and agent sessions work either way.
+    var paired = false {
+        didSet {
+            guard paired != oldValue else { return }
+            model.contacts = []
+            model.invites = []
+            model.openContact = nil
+            model.peopleLoad = .idle
+            if !paired, target == .people { open(.pair, user: false) }
+        }
+    }
 
     private static let pad = CGSize(width: 24, height: 28)   // room for the shadow and the bump
 
-    init(store: TaskStore, sync: SyncEngine, presence: Presence, bridge: AgentBridge) {
+    init(store: TaskStore, sync: SyncEngine, presence: Presence, bridge: AgentBridge, pairing: Pairing) {
         self.store = store
         self.sync = sync
         self.presence = presence
         self.bridge = bridge
+        self.pairing = pairing
         heightSub = model.$height.removeDuplicates().sink { [weak self] h in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.heightChanged(h) } }
         }
+        // The sender sees "píše" while the owner types a reply.
+        typingSub = model.$replyText.removeDuplicates().sink { [weak self] text in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.typed(text) } }
+        }
+        pairing.onChange = { [weak self] in self?.pairingChanged() }
         installMonitors()
     }
 
@@ -159,6 +180,8 @@ final class IslandController {
         model.earsUrgency = rest.map(\.level).max() ?? .green
         model.waitingCount = store.waiting(at: now).count
         if target == .waiting { model.waitingRows = store.waiting(at: now) }
+        // Online dots go stale: refresh the list while it is open.
+        if target == .people, paired, now.timeIntervalSince(peopleAt) >= 30 { loadPeople() }
         // A missed exit event must not leave the island hovered or peeking. Only turns things off:
         // a pointer parked at the top of the screen must not count as someone looking.
         updatePointer(onlyClear: true)
@@ -201,14 +224,15 @@ final class IslandController {
     private func playSound() { NSSound(named: NSSound.Name("Glass"))?.play() }
 
     private func announce(_ t: TodoTask) {
-        let text = "\(t.fromName), \(t.level.word): \(t.title)"
+        let text = "\(t.fromName)\(TaskCard.marker(t).map { ", \($0)" } ?? ""), \(t.level.word): \(t.title)"
         NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                              userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     // MARK: Open and close
 
-    /// Click on the notch or the menu bar item: the task when one is due, otherwise a new task.
+    /// Click on the notch or the menu bar item: the task when one is due, otherwise a new task
+    /// (or "Připojit tento Mac" while this Mac is not connected).
     func openFromUser(_ preferred: IslandMode = .compose) {
         let due = store.due()
         if !due.isEmpty {
@@ -216,11 +240,12 @@ final class IslandController {
             if target != .task { open(.task, user: true) }
             pickCurrent(due)
         } else {
-            open(preferred, user: true)
+            open(!paired && preferred == .compose ? .pair : preferred, user: true)
         }
     }
 
-    func open(_ mode: IslandMode, user: Bool) {
+    func open(_ requested: IslandMode, user: Bool) {
+        let mode: IslandMode = requested == .people && !paired ? .pair : requested
         let p = panel ?? makePanel()
         panel = p
         place()
@@ -228,6 +253,7 @@ final class IslandController {
         case .task: if let top = store.due().first, model.current.map({ store.due().map(\.id).contains($0.id) }) != true { setCurrent(top) }
         case .waiting: model.waitingRows = store.waiting()
         case .people: loadPeople()
+        case .pair: model.pair = pairing.state
         case .compose, .closed: break
         }
         if model.shown == .people && mode != .people { forgetKey() }
@@ -305,7 +331,7 @@ final class IslandController {
             if let c = model.current { store.touch(c.id); onChange?() }
             dismissed = knownDue
             close()
-        case .compose, .waiting, .people:
+        case .compose, .waiting, .people, .pair:
             closeTool()
         case .closed:
             break
@@ -331,8 +357,10 @@ final class IslandController {
         switchTo: { [weak self] m in self?.open(m, user: true) },
         add: { [weak self] in self?.add() },
         invite: { [weak self] in self?.invite() },
-        makeKey: { [weak self] in self?.makeAgentKey() },
-        revoke: { [weak self] s in self?.revoke(s) })
+        revokeInvite: { [weak self] id in self?.revokeInvite(id) },
+        toggleContact: { [weak self] id in self?.toggleContact(id) },
+        pair: { [weak self] in self?.pairing.start() },
+        cancelPair: { [weak self] in self?.pairing.cancel() })
 
     private func done(_ id: String) {
         store.markDone(id)
@@ -410,21 +438,45 @@ final class IslandController {
         tick()
     }
 
+    private func typed(_ text: String) {
+        guard !text.isEmpty, target == .task, let t = model.current, let ref = t.taskRef, !t.isAgentSession else { return }
+        sync.typing(ref)
+    }
+
+    // MARK: Pairing
+
+    private func pairingChanged() {
+        model.pair = pairing.state
+        guard case .done = pairing.state else { return }
+        // Say it worked where the owner looks (the island may have folded while they were in the browser).
+        if target == .closed { open(.pair, user: false) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+            guard let self else { return }
+            if self.target == .pair { self.closeTool() }
+            // Only once the island has folded, or "Připojeno" would flash back to the button.
+            DispatchQueue.main.asyncAfter(deadline: .now() + kIslandSettle) { [weak self] in self?.pairing.reset() }
+        }
+    }
+
     // MARK: People
 
     private func loadPeople() {
-        if model.people.isEmpty { model.peopleLoad = .loading }
+        peopleAt = Date()
+        if model.contacts.isEmpty && model.invites.isEmpty { model.peopleLoad = .loading }
         Task {
-            switch await sync.senders() {
-            case .success(let list):
-                let order: (Sender) -> Int = { $0.kind == "agent" ? 2 : ($0.status == "invited" ? 1 : 0) }
-                model.people = list.sorted {
-                    order($0) != order($1) ? order($0) < order($1) : ($0.createdAt ?? 0) < ($1.createdAt ?? 0)
-                }
+            async let c = sync.loadContacts()
+            async let i = sync.invites()
+            let (contacts, invites) = await (c, i)
+            switch contacts {
+            case .success(let reply):
+                model.contacts = ContactRow.list(reply)
+                model.myKey = sync.identity.flatMap { try? $0.key() }.flatMap { Net.fingerprint(Seal.publicKey(of: $0)) }
+                if let id = model.openContact, !model.contacts.contains(where: { $0.id == id }) { model.openContact = nil }
                 model.peopleLoad = .loaded
             case .failure(let e):
-                model.peopleLoad = .failed(e.message)
+                if model.contacts.isEmpty { model.peopleLoad = .failed(e.message) }
             }
+            if case .success(let list) = invites { model.invites = list }
         }
     }
 
@@ -434,74 +486,49 @@ final class IslandController {
     }
 
     private func forgetKey() {
-        model.shownKey = nil
         model.said = ""
         model.saidOK = false
+        model.openContact = nil
     }
 
     private func invite() {
-        let name = String(model.personName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(kNameMax))
+        var name = model.personName.trimmingCharacters(in: .whitespacesAndNewlines)
+        while name.utf16.count > kNameMax { name.removeLast() }
         guard !name.isEmpty, !model.busy else { return }
         model.busy = true
         Task {
-            let r = await sync.inviteLink(name: name)
+            let r = await sync.createInvite(name: name)
             model.busy = false
             switch r {
             case .success(let link):
+                // Shown once: the server keeps only the hash of the link.
                 copy(link.url)
-                model.shownKey = nil
                 model.said = "Odkaz zkopírován, platí 7 dní."
                 model.saidOK = true
                 model.personName = ""
                 loadPeople()
             case .failure(let e):
-                model.shownKey = nil
+                model.said = e.code == "too-many-invites" ? "Moc otevřených pozvánek." : e.message
+                model.saidOK = false
+            }
+        }
+    }
+
+    private func revokeInvite(_ id: String) {
+        Task {
+            switch await sync.revokeInvite(id) {
+            case .success, .failure(.server(404, _)):
+                model.invites.removeAll { $0.id == id }
+            case .failure(let e):
                 model.said = e.message
                 model.saidOK = false
             }
         }
     }
 
-    private func makeAgentKey() {
-        let name = String(model.personName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(kNameMax))
-        guard !name.isEmpty, !model.busy else { return }
-        guard let key = AgentKey.generate() else {
-            model.said = "Klíč se nepodařilo vytvořit."
-            model.saidOK = false
-            return
-        }
-        model.busy = true
-        Task {
-            let r = await sync.agentKey(name: name, key: key)
-            model.busy = false
-            switch r {
-            case .success:
-                // Shown and copied once. The server keeps only the hash and the last 4 characters.
-                copy(key.key)
-                model.shownKey = key.key
-                model.said = "Zkopírováno, uvidíš ho jen teď."
-                model.saidOK = true
-                model.personName = ""
-                loadPeople()
-            case .failure(let e):
-                model.shownKey = nil
-                model.said = e.message
-                model.saidOK = false
-            }
-        }
-    }
-
-    private func revoke(_ s: Sender) {
-        Task {
-            switch await sync.revoke(senderId: s.id) {
-            case .success:
-                model.people.removeAll { $0.id == s.id }
-            case .failure(let e):
-                model.shownKey = nil
-                model.said = e.message
-                model.saidOK = false
-            }
-        }
+    /// A contact's detail: the key fingerprints, to compare in person.
+    private func toggleContact(_ id: String) {
+        model.openContact = model.openContact == id ? nil : id
     }
 
     // MARK: Pointer
@@ -703,7 +730,8 @@ final class IslandController {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if [.compose, .waiting, .people].contains(self.target) { self.closeTool() }
+                // Pairing keeps polling while the island is folded; the owner is in the browser now.
+                if [.compose, .waiting, .people, .pair].contains(self.target) { self.closeTool() }
             }
         }) { monitors.append(m) }
     }

@@ -1,9 +1,11 @@
 #!/bin/bash
-# Builds pingme.app into build/. Usage: ./build.sh <web-url>
-# Env: API_URL (Macaly HTTP API), CONVEX_URL (Convex deployment for the live feed), WEB_URL.
+# Builds pingme.app into build/. Usage: ./build.sh [web-url]
+# Env, all optional: WEB_URL (pairing page and invite links), API_URL (the deployment's HTTP actions,
+# /device/*), CONVEX_URL (the Convex deployment for the live feed). Defaults: the hosted pingme.
+# No secrets go into the app: its device token is made when the Mac is paired and lives in the Keychain.
 set -euo pipefail
 cd "$(dirname "$0")"
-WEB_URL="${1:-${WEB_URL:-}}"
+WEB_URL="${1:-${WEB_URL:-https://pingme.macaly.app}}"
 API_URL="${API_URL:-https://proficient-labrador-100.api.macaly.app}"
 CONVEX_URL="${CONVEX_URL:-https://proficient-labrador-100.eu-west-1.convex.cloud}"
 APP="build/pingme.app"
@@ -23,7 +25,8 @@ cp Resources/Info.plist "$APP/Contents/"
 cp Resources/icons/*.svg "$APP/Contents/Resources/icons/"
 cp Resources/fonts/* "$APP/Contents/Resources/fonts/"
 cp Resources/pingme-hook.sh "$APP/Contents/Resources/"
-python3 -c 'import json,sys; print(json.dumps({"api":sys.argv[1],"token":open("config/token").read().strip(),"web":sys.argv[2],"convex":sys.argv[3]}))' "$API_URL" "$WEB_URL" "$CONVEX_URL" > "$APP/Contents/Resources/config.json"
+/usr/bin/python3 -I -c 'import json,sys; print(json.dumps({"api":sys.argv[1],"web":sys.argv[2],"convex":sys.argv[3]}))' \
+  "$API_URL" "$WEB_URL" "$CONVEX_URL" > "$APP/Contents/Resources/config.json"
 for s in 16 32 128 256 512; do
   "$APP/Contents/MacOS/Pingme" --render-icon "build/AppIcon.iconset/icon_${s}x${s}.png" $s
   "$APP/Contents/MacOS/Pingme" --render-icon "build/AppIcon.iconset/icon_${s}x${s}@2x.png" $((s*2))

@@ -5,9 +5,10 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store = TaskStore(fileURL: TaskStore.defaultURL())
-    private var config: AppConfig!
+    private var config = AppConfig()
     private var sync: SyncEngine!
     private var feed: LiveFeed!
+    private var pairing: Pairing!
     private var presence: Presence!
     private var island: IslandController!
     private var bridge: AgentBridge!
@@ -15,7 +16,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var tickTimer: Timer?
     private var lastStatus = ""
-    private var lastWatching = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let me = NSRunningApplication.current
@@ -23,13 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
            NSRunningApplication.runningApplications(withBundleIdentifier: bid).contains(where: { $0 != me }) {
             exit(0)
         }
-        guard let config = AppConfig.load() else {
-            let a = NSAlert()
-            a.messageText = "pingme chybí nastavení (config.json)."
-            a.runModal()
-            exit(1)
-        }
-        self.config = config
+        config = AppConfig.load()
         installMainMenu()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -37,21 +31,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
+        let api = DeviceAPI(base: config.apiURL)
         presence = Presence()
-        sync = SyncEngine(store: store, config: config)
-        feed = LiveFeed(deploymentUrl: config.convexURL, key: config.token)
-        sync.feedHealthy = { [weak self] in self?.feed.healthy ?? false }
+        sync = SyncEngine(store: store, api: api)
+        feed = LiveFeed(deploymentUrl: config.convexURL)
+        pairing = Pairing(api: api, web: config.webURL)
         feed.onValue = { [weak self] value in self?.feedValue(value) }
         bridge = AgentBridge(dataDir: TaskStore.dataDir())
         bridge.onRecap = { [weak self] in self?.tick() }
         triage = Triage(dataDir: TaskStore.dataDir())
         triage.onFinish = { [weak self] in self?.tick() }
-        island = IslandController(store: store, sync: sync, presence: presence, bridge: bridge)
+        island = IslandController(store: store, sync: sync, presence: presence, bridge: bridge, pairing: pairing)
         island.onChange = { [weak self] in
             self?.sync.noteLocalChange()
             self?.updateStatusItem()
         }
         sync.onSynced = { [weak self] in self?.tick() }
+        sync.onUnauthorized = { [weak self] in self?.forgetDevice(show: true) }
+        pairing.onPaired = { [weak self] id in self?.usePaired(id) }
         presence.onWake = { [weak self] in
             // The socket may be stale after sleep: resubscribe, and poll until the feed answers.
             self?.feed.start()
@@ -72,9 +69,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MainActor.assumeIsolated { self?.island.place(force: true) }
         }
 
-        feed.start()
         tick()
+        switch IdentityStore.load() {
+        case .success(let id?) where id.paired:
+            usePaired(id)
+        case .success:
+            // Not connected yet: the island says so right away (an agent may have just installed the app).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island.open(.pair, user: false) }
+        case .failure(let e):
+            // Never treat this as "not paired": the key may still work after a restart. The menu says
+            // what is wrong, and "Připojit tento Mac" there starts over only when the owner asks.
+            store.syncError = e.message
+        }
+    }
+
+    private func usePaired(_ id: DeviceIdentity) {
+        sync.setIdentity(id)
+        island.paired = sync.paired
+        feed.use(token: sync.paired ? id.token : nil)
+        store.syncError = nil
         sync.syncNow()
+        updateStatusItem()
+    }
+
+    /// Unpaired here or on the server: forget the token and key, stop syncing, offer pairing again.
+    private func forgetDevice(show: Bool) {
+        sync.setIdentity(nil)
+        feed.use(token: nil)
+        try? IdentityStore.delete()
+        island.paired = false
+        store.syncError = nil
+        updateStatusItem()
+        if show { island.open(.pair, user: false) }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -82,10 +108,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return false
     }
 
-    /// pingme://people opens the people list, pingme:// anything else opens the island.
+    /// pingme://people opens the people list (or pairing), pingme:// anything else opens the island.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first, url.scheme == "pingme" else { return }
-        if url.host == "people" { island.open(.people, user: true) } else { island.openFromUser() }
+        if url.host == "people" { island.open(sync.paired ? .people : .pair, user: true) } else { island.openFromUser() }
     }
 
     private func tick() {
@@ -95,23 +121,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateStatusItem()
     }
 
-    /// The live feed changed: a command arrived or left, or the web pinged.
+    /// The live feed changed: a ping arrived or left.
     private func feedValue(_ v: FeedValue) {
-        sync.feedWebLastSeen = v.webLastSeen
-        let fresh = v.commands.filter { !store.acks.contains($0.id) && !sync.recentlyConfirmed($0.id) }
-        if !fresh.isEmpty {
-            // Store it right away (a red task must pop within seconds), then confirm.
-            if store.receive(fresh) { tick() }
-            sync.syncNow()
-        }
-        checkWatching()
+        let fresh = v.messages.filter { !store.acks.contains($0.ref) && !sync.recentlyConfirmed($0.ref) }
+        guard !fresh.isEmpty else { return }
+        // Store it right away (a red ping must pop within seconds), then ack it.
+        if store.receive(sync.open(fresh)) { tick() }
+        sync.syncNow()
     }
 
-    /// Sync cadence: live feed first, keep-alive every 60 s, 3 s polling while the feed is down,
-    /// nothing while asleep or locked for more than 5 minutes.
+    /// Sync cadence: live feed first, keep-alive every 60 s (that is what keeps this Mac online),
+    /// 3 s polling while the feed is down, nothing while asleep or locked for more than 5 minutes.
     private func schedule(now: Date = Date()) {
+        guard sync.paired else { return }
         if !presence.asleep { feed.tick(now: now) }
-        checkWatching()
         guard !presence.quiet(at: now) else { return }
         let since = now.timeIntervalSince(sync.lastAttempt)
         if feed.downFor(at: now) >= 10, since >= 3 {
@@ -121,13 +144,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else if sync.lastFailed, !store.outbox.isEmpty, since >= 5 {
             sync.syncNow()
         }
-    }
-
-    /// Someone opened the web: send the snapshot within a second.
-    private func checkWatching() {
-        let w = sync.watching
-        if w && !lastWatching { sync.syncNow() }
-        lastWatching = w
     }
 
     private func updateStatusItem() {
@@ -163,8 +179,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
         menu.addItem(item("Otevřít pingme", #selector(openIsland), key: ""))
-        menu.addItem(item("Lidé", #selector(openPeople), key: ""))
+        if sync.paired {
+            menu.addItem(item("Lidé", #selector(openPeople), key: ""))
+        } else {
+            menu.addItem(item("Připojit tento Mac", #selector(openPair), key: ""))
+        }
         menu.addItem(.separator())
+        if sync.paired { menu.addItem(item("Odpojit tento Mac", #selector(unpair), key: "")) }
         menu.addItem(item("Ukončit pingme", #selector(quit), key: "q"))
     }
 
@@ -181,6 +202,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openPeople() {
         DispatchQueue.main.async { [weak self] in self?.island.open(.people, user: true) }
+    }
+
+    @objc private func openPair() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.island.open(.pair, user: true)
+            if !self.pairing.busy { self.pairing.start() }
+        }
+    }
+
+    /// Revokes this Mac on the server and forgets its key. Asked first: it cannot be undone.
+    @objc private func unpair() {
+        let a = NSAlert()
+        a.messageText = "Odpojit tento Mac?"
+        a.informativeText = "Pingy sem chodit přestanou. Připojit ho jde znovu."
+        a.addButton(withTitle: "Odpojit")
+        a.addButton(withTitle: "Zrušit")
+        NSApp.activate(ignoringOtherApps: true)
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            await sync.unpair()
+            forgetDevice(show: false)
+        }
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
