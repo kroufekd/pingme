@@ -1,104 +1,40 @@
 import { useAuthActions } from '@convex-dev/auth/react'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { clearInvite, loadInvite, loadOtpEmail, saveOtpEmail } from '@/lib/invite'
-import type { Me, Mine, Row } from '@/lib/tasks'
+import { isOnline } from '@/lib/network'
+import type { ContactsView, MyDevice } from '@/lib/network'
+import type { Me } from '@/lib/tasks'
+import { useNow } from '@/lib/time'
+import { ConnectAgent } from './connect'
+import { NewMacNotice, useDeviceList } from './devices'
+import { Onboarding, needsOnboarding } from './onboarding'
+import { PairPanel } from './pair'
+import type { Person } from './people-picker'
 import { CodePanel, EmailPanel } from './sign-in'
 import { SentList, SentToggle, hasUnseenReply } from './task-list'
 import { TaskForm } from './task-form'
-import type { NewTask, SendResult } from './task-form'
+import { useDevice, useSent } from './use-network'
 
 type Phase = 'loading' | 'email' | 'code' | 'form'
+const NO_DEVICES: MyDevice[] = []
 
 const HINT_NO_CODE = 'Na tenhle e-mail kód nepřijde.'
 const HINT_NOT_MEMBER = 'Tenhle e-mail nemá pozvánku.'
 const HINT_BAD_EMAIL = 'Zkontroluj e-mail.'
 const HINT_BAD_CODE = 'Kód nesedí.'
 
-/** Tells the Mac someone is looking, so it shares its list while the page is open. */
-function useWatching(enabled: boolean) {
-  const ping = useMutation(api.relay.ping)
-  useEffect(() => {
-    if (!enabled) return
-    const beat = () => {
-      if (document.visibilityState === 'visible') ping({}).catch(() => {})
-    }
-    beat()
-    const id = setInterval(beat, 20_000)
-    document.addEventListener('visibilitychange', beat)
-    return () => {
-      clearInterval(id)
-      document.removeEventListener('visibilitychange', beat)
-    }
-  }, [enabled, ping])
-}
-
-type Local = { key: string; row: Row; id?: string }
-
-/** Sending with an optimistic row that keeps its key when the real row arrives. */
-function useSent(member: boolean) {
-  const create = useMutation(api.relay.create)
-  const mine: Mine | undefined = useQuery(api.tasks.mine, member ? {} : 'skip')
-  const seq = useRef(0)
-  const [locals, setLocals] = useState<Local[]>([])
-  const [keys, setKeys] = useState<Record<string, string>>({})
-
-  const send = useCallback(
-    async (task: NewTask): Promise<SendResult> => {
-      seq.current += 1
-      const key = `local-${seq.current}`
-      const now = Date.now()
-      const row: Row = {
-        taskRef: key,
-        title: task.title,
-        urgency: task.urgency,
-        to: task.to,
-        dueAt: task.dueAt,
-        repeat: task.repeat,
-        status: 'queued',
-        statusAt: now,
-        replyPending: false,
-        createdAt: now,
-      }
-      setLocals((l) => [{ key, row }, ...l])
-      try {
-        const res = await create({ title: task.title, dueAt: task.dueAt, repeat: task.repeat, urgency: task.urgency, to: task.to === 'agent' ? 'agent' : undefined })
-        if (res.ok) {
-          setKeys((k) => ({ ...k, [res.id]: key }))
-          setLocals((l) => l.map((x) => (x.key === key ? { ...x, id: res.id } : x)))
-          return { ok: true }
-        }
-        setLocals((l) => l.filter((x) => x.key !== key))
-        return { ok: false, error: res.error }
-      } catch {
-        setLocals((l) => l.filter((x) => x.key !== key))
-        return { ok: false, error: 'network' }
-      }
-    },
-    [create],
-  )
-
-  const serverRows = mine?.status === 'member' ? mine.rows : []
-  const known = new Set(serverRows.map((r) => r.taskRef))
-  const rows = [...locals.filter((l) => !(l.id && known.has(l.id))).map((l) => l.row), ...serverRows]
-  const keyOf = useCallback((r: Row) => keys[r.taskRef] ?? r.taskRef, [keys])
-
-  // Drop optimistic rows once the server has them (their key stays mapped).
-  const matched = locals.some((l) => l.id && known.has(l.id))
-  useEffect(() => {
-    if (matched) setLocals((l) => l.filter((x) => !(x.id && known.has(x.id))))
-  })
-
-  return { loaded: mine !== undefined, rows, keyOf, send }
-}
-
-export function App() {
+/**
+ * The one screen. Sign-in states first; signed in, "home" shows the form and the sent list,
+ * "pair" (the /pair page the Mac opens) shows the pairing confirmation in the same place.
+ */
+export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const { isLoading, isAuthenticated } = useConvexAuth()
   const { signIn, signOut } = useAuthActions()
   const startInvite = useMutation(api.inviteLinks.start)
   const claimInvite = useMutation(api.inviteLinks.claim)
-  const ackReply = useMutation(api.tasks.ackReply)
+  const finishOnboarding = useMutation(api.senders.finishOnboarding)
 
   const [mounted, setMounted] = useState(false)
   const [invite, setInvite] = useState<string | null>(null)
@@ -186,8 +122,20 @@ export function App() {
     setBusy(false)
   }, [phase])
 
-  const sent = useSent(phase === 'form')
-  useWatching(phase === 'form')
+  // The network (device key, contacts, sent list) only runs on the home view of a member.
+  const network = view === 'home' && phase === 'form'
+  const device = useDevice(network)
+  const contacts = useQuery(api.contacts.list, network ? {} : 'skip') as ContactsView | undefined
+  // The online dot comes from macLastSeen on this timer: a query does not rerun as time passes.
+  const now = useNow(30_000)
+  const sent = useSent({ enabled: network, device, view: contacts, now })
+  const contactList = contacts?.status === 'member' ? contacts.contacts : null
+  const myDevices = contacts?.status === 'member' ? contacts.me.devices : null
+  const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId)
+  const people: Person[] | null = useMemo(
+    () => contactList?.map((c) => ({ userId: c.userId, name: c.name, hasMac: c.hasMac, online: isOnline(c.macLastSeen, now) })) ?? null,
+    [contactList, now],
+  )
 
   async function sendCode(address: string) {
     setBusy(true)
@@ -236,8 +184,6 @@ export function App() {
     setEmailHint(null)
   }
 
-  const onAck = useCallback((taskRef: string) => ackReply({ taskRef }), [ackReply])
-
   // The sent list is closed until asked for. A waiting reply only puts a badge on its icon.
   const [listOpen, setListOpen] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
@@ -249,28 +195,48 @@ export function App() {
     prevShown.current = shown
   }, [shown])
 
-  const listReady = shown === 'form' && sent.loaded
+  const home = view === 'home'
+  const listReady = home && shown === 'form' && sent.loaded
+  // The intro names who invited them (or their first contact) and waits for that, so no name flashes.
+  const introName = me?.status === 'member' ? (me.inviterName ?? contactList?.[0]?.name) : undefined
   return (
     <main className="screen">
       <h1 className="vh">pingme</h1>
+      {/* A Mac that joins the account can read every ping to it: never let that pass unseen. */}
+      {home && shown === 'form' && myDevices && <NewMacNotice devices={myDevices} thisId={device.deviceId} now={now} />}
       <div className="stage" data-phase={shown} aria-busy={waiting || busy || undefined}>
         <EmailPanel on={shown === 'email'} busy={busy || waiting} hint={emailHint} initialEmail={email} onSubmit={(a) => void sendCode(a)} />
         <CodePanel on={shown === 'code'} busy={busy || waiting} hint={codeHint} email={otpEmail ?? ''} onSubmit={verify} onBack={backToEmail} />
-        <TaskForm
-          on={shown === 'form'}
-          onSend={sent.send}
-          panelRef={formRef}
-          aside={
-            <SentToggle
-              count={listReady ? sent.rows.length : 0}
-              badge={listReady && !listOpen && hasUnseenReply(sent.rows)}
-              open={listOpen}
-              onToggle={() => setListOpen((o) => !o)}
-            />
-          }
-        />
+        {home ? (
+          <TaskForm
+            on={shown === 'form'}
+            people={people}
+            onSend={sent.send}
+            panelRef={formRef}
+            aside={
+              <SentToggle
+                count={listReady ? sent.rows.length : 0}
+                badge={listReady && !listOpen && hasUnseenReply(sent.rows)}
+                open={listOpen}
+                onToggle={() => setListOpen((o) => !o)}
+              />
+            }
+          />
+        ) : (
+          <PairPanel on={shown === 'form'} />
+        )}
       </div>
-      {listReady && <SentList rows={sent.rows} keyOf={sent.keyOf} onAck={onAck} open={listOpen} />}
+      {listReady && <SentList rows={sent.rows} keyOf={sent.keyOf} onAck={sent.onAck} open={listOpen} showWho={(people?.length ?? 0) > 1} />}
+      {listReady && <ConnectAgent side={myDevices && deviceList.toggle} below={myDevices && deviceList.panel} />}
+      {/* Once per account, after the contacts are known. The text is end-to-end encrypted. */}
+      {home && shown === 'form' && contactList !== null && needsOnboarding(me) && (
+        <Onboarding
+          name={introName}
+          encrypted
+          onDone={() => void finishOnboarding({}).catch(() => {})}
+          onClosed={() => formRef.current?.querySelector<HTMLInputElement>('#u-title')?.focus()}
+        />
+      )}
     </main>
   )
 }

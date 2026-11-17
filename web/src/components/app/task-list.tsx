@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { initials } from '@/lib/people'
 import { ICONS, KINDS, kindOf, spokenFor, urgencyOf, wordFor } from '@/lib/tasks'
 import type { Kind, Row } from '@/lib/tasks'
 import { useNow } from '@/lib/time'
 import { Icon } from './icon'
 
 export const SENT_ID = 'u-sent'
+export const TITLE_ELSEWHERE = 'Text je na jiném zařízení.'
+export const REPLY_ELSEWHERE = 'Odpověď je na jiném zařízení.'
+
+/** A reply this device has to show: its text, or the note that it was sealed for another device. */
+function hasReply(r: Row) {
+  return !!r.reply || !!r.replyMissing
+}
 
 /** True while a reply waits that the sender has not had on screen yet. */
 export function hasUnseenReply(rows: Row[]) {
-  return rows.some((r) => r.replyPending && r.reply)
+  return rows.some((r) => r.replyPending && hasReply(r))
 }
 
 /**
@@ -68,7 +76,7 @@ function StatusCell({ row, kind, now }: { row: Row; kind: Kind; now: number }) {
   )
 }
 
-function Item({ row, reply, now, isNew, index }: { row: Row; reply: string | undefined; now: number; isNew: boolean; index: number }) {
+function Item({ row, reply, now, isNew, index, showWho }: { row: Row; reply: string | undefined; now: number; isNew: boolean; index: number; showWho: boolean }) {
   const u = urgencyOf(row.urgency)
   const kind = kindOf(row, now)
   const cls = ['it', u.cls, kind === 'done' ? 'gone' : '', isNew ? 'new' : ''].filter(Boolean).join(' ')
@@ -77,15 +85,21 @@ function Item({ row, reply, now, isNew, index }: { row: Row; reply: string | und
       <span className="dot" aria-hidden="true" />
       <span className="vh">{u.word}: </span>
       <div className="it-b">
-        {row.title !== null ? (
-          <p className="it-t">
+        {row.title !== null || row.titleMissing ? (
+          <p className={row.title === null ? 'it-t it-miss' : 'it-t'}>
+            {showWho && row.toName && (
+              <span className="it-who" title={row.toName}>
+                <span aria-hidden="true">{initials(row.toName)}</span>
+                <span className="vh">{row.toName}: </span>
+              </span>
+            )}
             {row.to === 'agent' && (
               <span className="it-to" title="Agent">
                 <Icon name="robot" size={14} />
                 <span className="vh">Agent</span>
               </span>
             )}
-            {row.title}
+            {row.title ?? TITLE_ELSEWHERE}
           </p>
         ) : (
           <p className="it-t">
@@ -93,11 +107,11 @@ function Item({ row, reply, now, isNew, index }: { row: Row; reply: string | und
             <span className="vh">Text se načítá</span>
           </p>
         )}
-        {reply && (
-          <p className="it-r">
+        {(reply || row.replyMissing) && (
+          <p className={reply ? 'it-r' : 'it-r it-miss'}>
             <Icon name="reply" size={14} />
             <span className="vh">Odpověď: </span>
-            <span>{reply}</span>
+            <span>{reply ?? REPLY_ELSEWHERE}</span>
           </p>
         )}
       </div>
@@ -112,7 +126,20 @@ function Item({ row, reply, now, isNew, index }: { row: Row; reply: string | und
  * `keyOf` keeps a row's DOM node when the optimistic row is replaced by the real one, so its
  * status animates instead of remounting.
  */
-export function SentList({ rows, keyOf, onAck, open }: { rows: Row[]; keyOf: (row: Row) => string; onAck: (taskRef: string) => Promise<unknown>; open: boolean }) {
+export function SentList({
+  rows,
+  keyOf,
+  onAck,
+  open,
+  showWho = false,
+}: {
+  rows: Row[]
+  keyOf: (row: Row) => string
+  onAck: (taskRef: string) => Promise<unknown>
+  open: boolean
+  /** More than one contact: each row says who it went to. */
+  showWho?: boolean
+}) {
   const live = open && rows.some((r) => r.status === 'snoozed' || (r.typingUntil !== undefined && r.typingUntil > Date.now() - 1000))
   const now = useNow(live ? 1000 : 30_000)
 
@@ -129,7 +156,7 @@ export function SentList({ rows, keyOf, onAck, open }: { rows: Row[]; keyOf: (ro
   const acked = useRef(new Set<string>())
   useEffect(() => {
     if (!open) return
-    const pending = rows.filter((r) => r.replyPending && r.reply)
+    const pending = rows.filter((r) => r.replyPending && hasReply(r))
     if (pending.length === 0) return
     const run = () => {
       if (document.visibilityState === 'hidden') return
@@ -167,7 +194,7 @@ export function SentList({ rows, keyOf, onAck, open }: { rows: Row[]; keyOf: (ro
         <ul className="its">
           {rows.map((r, i) => {
             const key = keyOf(r)
-            return <Item key={key} row={r} reply={r.reply ?? replies.current.get(r.taskRef)} now={now} isNew={!known.current?.has(key)} index={i} />
+            return <Item key={key} row={r} reply={r.reply ?? replies.current.get(r.taskRef)} now={now} isNew={!known.current?.has(key)} index={i} showWho={showWho} />
           })}
         </ul>
       )}

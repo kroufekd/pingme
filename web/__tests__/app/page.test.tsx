@@ -1,12 +1,16 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Row } from '@/lib/tasks'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetDeviceKey } from '@/lib/device-key'
+import type { Contact, ContactsView, SentRow } from '@/lib/network'
+import { resetVault, vaultGet, vaultSet } from '@/lib/vault'
+import { DOMINIK, ME, VIKI, WEB, contact, contactsView, keys, openFor, sentRow } from './net-fixtures'
 
 // A tiny fake of Convex and Convex Auth: tests set what the queries return and
-// read what the mutations got, by function name ("tasks:mine", "relay:create", ...).
+// read what the mutations got, by function name ("messages:mine", "messages:send", ...).
 const h = vi.hoisted(() => ({
   auth: { isLoading: false, isAuthenticated: false },
   queries: {} as Record<string, unknown>,
+  queryArgs: {} as Record<string, unknown>,
   mutations: {} as Record<string, ReturnType<typeof vi.fn>>,
   results: {} as Record<string, unknown>,
   signIn: vi.fn(),
@@ -17,7 +21,11 @@ vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server')
   return {
     useConvexAuth: () => h.auth,
-    useQuery: (ref: never, args: unknown) => (args === 'skip' ? undefined : h.queries[getFunctionName(ref)]),
+    useQuery: (ref: never, args: unknown) => {
+      if (args === 'skip') return undefined
+      h.queryArgs[getFunctionName(ref)] = args
+      return h.queries[getFunctionName(ref)]
+    },
     useMutation: (ref: never) => {
       const name = getFunctionName(ref)
       if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
@@ -37,24 +45,21 @@ function mutation(name: string) {
   return h.mutations[name]
 }
 
-function member(rows: Row[]) {
-  h.auth.isAuthenticated = true
-  h.queries['senders:me'] = { status: 'member', name: 'Franta', senderId: 's1' }
-  h.queries['tasks:mine'] = { status: 'member', name: 'Franta', macLastSeen: null, snapshotAt: null, rows }
-}
+let K: Awaited<ReturnType<typeof keys>>
+beforeAll(async () => {
+  K = await keys()
+})
 
-function row(over: Partial<Row>): Row {
-  return {
-    taskRef: 't1',
-    title: 'Pošli mi fotky z hor',
-    urgency: 'orange',
-    dueAt: Date.now(),
-    status: 'queued',
-    statusAt: Date.now(),
-    replyPending: false,
-    createdAt: Date.now(),
-    ...over,
-  }
+/** Dominik with his Mac, online. The default single contact. */
+const dominik = () => contact({ userId: DOMINIK, name: 'Dominik' }, K.dominikMac)
+
+/** A signed-in member, this browser registered as WEB with key K.me. */
+function member(rows: SentRow[] = [], contacts: Contact[] = [dominik()], view?: ContactsView) {
+  h.auth.isAuthenticated = true
+  h.queries['senders:me'] = { status: 'member', name: 'Franta', userId: ME, onboarded: true }
+  h.queries['contacts:list'] = view ?? contactsView(K.me, contacts, K.myMac)
+  h.queries['messages:mine'] = { status: 'member', deviceActive: true, rows }
+  h.results['devices:registerWeb'] ??= { ok: true, deviceId: WEB }
 }
 
 /** The word of each row's status right now. Rows show an icon only, the word is its tooltip. */
@@ -80,12 +85,17 @@ async function codeField() {
   return code
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   h.auth.isLoading = false
   h.auth.isAuthenticated = false
   h.queries = {}
+  h.queryArgs = {}
   h.mutations = {}
   h.results = {}
+  // This browser's stored key; jsdom has no IndexedDB, so the vault is the in-memory one.
+  resetVault()
+  resetDeviceKey()
+  await vaultSet('deviceKey', K.me)
   h.signIn.mockReset().mockResolvedValue({ signingIn: false })
   h.signOut.mockReset().mockResolvedValue(undefined)
   localStorage.clear()
@@ -172,7 +182,7 @@ describe('invite link', () => {
   it('drops the token and the ?i param once the claim is ok', async () => {
     // Like Convex: when the claim resolves, senders.me already says member.
     h.mutations['inviteLinks:claim'] = vi.fn(async () => {
-      member([])
+      member()
       return { ok: true, name: 'Franta' }
     })
     const view = await signInWithLink()
@@ -188,36 +198,95 @@ describe('invite link', () => {
   })
 })
 
-describe('the form and the sent list', () => {
-  it('sends with urgency and no token, and shows the row as "letí" right away', async () => {
-    member([])
-    h.results['relay:create'] = { ok: true, id: 'cmd1' }
-    const view = render(<App />)
-    const title = await screen.findByRole('textbox', { name: 'Úkol' })
-    fireEvent.click(screen.getByRole('radio', { name: 'Hned' }))
-    fireEvent.change(title, { target: { value: 'Vyndej prádlo z pračky' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
+/** Types a title and presses send. */
+async function sendTitle(text: string, label = 'Úkol') {
+  const title = await screen.findByRole('textbox', { name: label })
+  fireEvent.change(title, { target: { value: text } })
+  fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
+  return title
+}
 
-    await waitFor(() => expect(mutation('relay:create')).toHaveBeenCalledTimes(1))
-    const args = mutation('relay:create').mock.calls[0][0]
-    expect(args).toMatchObject({ title: 'Vyndej prádlo z pračky', urgency: 'red', repeat: undefined })
+const sends = () => mutation('messages:send').mock.calls.map((c) => c[0])
+
+describe('sending is end-to-end encrypted', () => {
+  it('seals the title for the recipient Macs and my devices, and sends no plaintext', async () => {
+    member()
+    h.results['messages:send'] = { ok: true, ref: 'x' }
+    const view = render(<App />)
+    await waitFor(() => expect(mutation('devices:registerWeb')).toHaveBeenCalledWith({ publicKey: K.me.publicKey, name: expect.any(String) }))
+    fireEvent.click(await screen.findByRole('radio', { name: 'Hned' }))
+    const title = await sendTitle('Vyndej prádlo z pračky')
+
+    await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
+    const args = sends()[0]
+    expect(args).toMatchObject({ to: DOMINIK, forAgent: false, urgency: 'red' })
+    expect(args.ref).toMatch(/^[A-Za-z0-9_-]{22}$/)
     expect(typeof args.dueAt).toBe('number')
-    expect(args).not.toHaveProperty('token')
-    expect(mutation('relay:ping')).toHaveBeenCalledWith({})
+    expect(args.repeat).toBeUndefined()
+    // The server only ever sees ciphertext.
+    expect(JSON.stringify(args)).not.toContain('prádlo')
+    expect(args).not.toHaveProperty('title')
+
+    // One envelope per Mac of Dominik; the sender's copy for this browser and my Mac.
+    expect(args.envelopes.map((e: { deviceId: string }) => e.deviceId)).toEqual([`mac-${DOMINIK}`])
+    expect(args.titleEnvelopes.map((e: { deviceId: string }) => e.deviceId).sort()).toEqual(['mac-me', WEB])
+    expect(await openFor(K.dominikMac.privateKey, 'title', args.ref, args.envelopes[0])).toBe('Vyndej prádlo z pračky')
+    const mine = args.titleEnvelopes.find((e: { deviceId: string }) => e.deviceId === WEB)
+    expect(await openFor(K.me.privateKey, 'title', args.ref, mine)).toBe('Vyndej prádlo z pračky')
+    const onMyMac = args.titleEnvelopes.find((e: { deviceId: string }) => e.deviceId === 'mac-me')
+    expect(await openFor(K.myMac.privateKey, 'title', args.ref, onMyMac)).toBe('Vyndej prádlo z pračky')
+    // Bound to its ref and both people: another ref or recipient does not open.
+    await expect(openFor(K.dominikMac.privateKey, 'title', 'AAAAAAAAAAAAAAAAAAAAAA', args.envelopes[0])).rejects.toThrow()
+    await expect(openFor(K.dominikMac.privateKey, 'title', args.ref, args.envelopes[0], VIKI)).rejects.toThrow()
+
     // The row is there right away, behind the sent icon with its count.
-    expect(screen.queryByText('Vyndej prádlo z pračky')).toBeNull()
+    expect(title).toHaveValue('')
     expect(sentToggle()).toHaveAccessibleName('Odeslané: 1')
-    expect(sentToggle()).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(sentToggle())
-    expect(sentToggle()).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Vyndej prádlo z pračky')).toBeInTheDocument()
     expect(shownWords(view.container)).toEqual(['letí'])
-    expect(title).toHaveValue('')
   })
 
-  it('sends to the agent: no "later", to=agent, and the row is marked', async () => {
-    member([])
-    h.results['relay:create'] = { ok: true, id: 'cmd2' }
+  it('seals for this browser even before the contact list knows it', async () => {
+    const view = contactsView(K.me, [dominik()])
+    if (view.status === 'member') view.me.devices = []
+    member([], [], view)
+    h.results['messages:send'] = { ok: true, ref: 'x' }
+    render(<App />)
+    await sendTitle('Ahoj')
+    await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
+    expect(sends()[0].titleEnvelopes.map((e: { deviceId: string }) => e.deviceId)).toEqual([WEB])
+  })
+
+  it('on stale devices seals again for the lists the server sent, once, with the same ref', async () => {
+    member()
+    const fresh = [{ deviceId: 'mac-new', kind: 'mac', publicKey: K.vikiMac.publicKey }]
+    h.mutations['messages:send'] = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: 'stale-devices', devices: fresh, myDevices: [{ deviceId: WEB, kind: 'web', publicKey: K.me.publicKey }] })
+      .mockResolvedValueOnce({ ok: true, ref: 'x' })
+    render(<App />)
+    await sendTitle('Zalij kytky')
+    await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(2))
+    const [first, second] = sends()
+    expect(second.ref).toBe(first.ref)
+    expect(second.envelopes.map((e: { deviceId: string }) => e.deviceId)).toEqual(['mac-new'])
+    expect(second.titleEnvelopes.map((e: { deviceId: string }) => e.deviceId)).toEqual([WEB])
+    expect(await openFor(K.vikiMac.privateKey, 'title', second.ref, second.envelopes[0])).toBe('Zalij kytky')
+  })
+
+  it('a failed send puts the text back and says so', async () => {
+    member()
+    h.results['messages:send'] = { ok: false, error: 'rate-limited' }
+    render(<App />)
+    const title = await sendTitle('Pojď na oběd')
+    expect(await screen.findByText('Moc pingů. Zkus to za chvíli.')).toBeInTheDocument()
+    expect(title).toHaveValue('Pojď na oběd')
+  })
+
+  it('sends to the agent: no "later", forAgent, and the row is marked', async () => {
+    member()
+    h.results['messages:send'] = { ok: true, ref: 'x' }
     render(<App />)
     await screen.findByRole('textbox', { name: 'Úkol' })
     expect(screen.getByRole('radio', { name: 'Dominik' })).toBeChecked()
@@ -225,19 +294,142 @@ describe('the form and the sent list', () => {
     const title = screen.getByRole('textbox', { name: 'Zpráva pro agenta' })
     expect(title).toHaveAttribute('placeholder', 'Zadej práci agentovi…')
     expect(screen.queryByRole('button', { name: 'Poslat později' })).toBeNull()
-    fireEvent.change(title, { target: { value: 'Mrkni na pozvánky' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
+    await sendTitle('Mrkni na pozvánky', 'Zpráva pro agenta')
 
-    await waitFor(() => expect(mutation('relay:create')).toHaveBeenCalledTimes(1))
-    expect(mutation('relay:create').mock.calls[0][0]).toMatchObject({ title: 'Mrkni na pozvánky', to: 'agent', repeat: undefined })
+    await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
+    expect(sends()[0]).toMatchObject({ to: DOMINIK, forAgent: true })
+    expect(sends()[0]).not.toHaveProperty('dueAt')
     fireEvent.click(sentToggle())
     expect(screen.getByText('Agent', { selector: '.it-to .vh' })).toBeInTheDocument()
     // The choice stays for the next message.
     expect(screen.getByRole('radio', { name: 'Agent' })).toBeChecked()
   })
 
-  it('opens "later" with day, time and the six repeat options', async () => {
-    member([])
+  it('registers again when the server no longer knows this browser', async () => {
+    member()
+    h.queries['messages:mine'] = { status: 'member', deviceActive: false, rows: [] }
+    render(<App />)
+    await waitFor(() => expect(mutation('devices:registerWeb')).toHaveBeenCalledTimes(2))
+    await act(() => new Promise((r) => setTimeout(r, 10)))
+    expect(mutation('devices:registerWeb')).toHaveBeenCalledTimes(2)
+    expect(h.queryArgs['messages:mine']).toEqual({ deviceId: WEB })
+  })
+})
+
+describe('who it goes to', () => {
+  it('one contact: the form as before, their name in the placeholder, a dot while online', async () => {
+    member()
+    const view = render(<App />)
+    const title = await screen.findByRole('textbox', { name: 'Úkol' })
+    expect(title).toHaveAttribute('placeholder', 'Pingni Dominika…')
+    expect(screen.queryByRole('button', { name: /^Komu/ })).toBeNull()
+    const person = screen.getByRole('radio', { name: 'Dominik' })
+    expect(person.closest('label')?.querySelector('.on-dot')).not.toBeNull()
+    expect(view.container.querySelectorAll('.face')).toHaveLength(0)
+  })
+
+  it('one contact offline: no dot, sending still works and the row waits', async () => {
+    member([], [contact({ userId: DOMINIK, name: 'Dominik', macLastSeen: Date.now() - 20 * 60_000, online: false }, K.dominikMac)])
+    h.results['messages:send'] = { ok: true, ref: 'x' }
+    const view = render(<App />)
+    await screen.findByRole('textbox', { name: 'Úkol' })
+    expect(screen.getByRole('radio', { name: 'Dominik' }).closest('label')?.querySelector('.on-dot')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Poslat' })).not.toHaveAttribute('aria-disabled')
+    await sendTitle('Až budeš u Macu')
+    await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
+    fireEvent.click(sentToggle())
+    expect(shownWords(view.container)).toEqual(['čeká'])
+  })
+
+  it('a contact without the app: grey, "Nemá appku", and nothing is sent', async () => {
+    member([], [contact({ userId: DOMINIK, name: 'Dominik' })])
+    render(<App />)
+    const title = await screen.findByRole('textbox', { name: 'Úkol' })
+    const person = screen.getByRole('radio', { name: 'Dominik, nemá appku' })
+    expect(person.closest('label')).toHaveClass('nomac')
+    expect(person.closest('label')).toHaveAttribute('title', 'Nemá appku')
+    const go = screen.getByRole('button', { name: 'Poslat' })
+    expect(go).toHaveAttribute('aria-disabled', 'true')
+    expect(go).toHaveAttribute('title', 'Nemá appku')
+    await sendTitle('Ahoj')
+    expect(await screen.findByText('Nemá appku.')).toBeInTheDocument()
+    expect(title).toHaveValue('Ahoj')
+    await act(() => new Promise((r) => setTimeout(r, 10)))
+    expect(mutation('messages:send')).not.toHaveBeenCalled()
+  })
+
+  it('two or more contacts: a picker of initials with online dots, sending to the one picked', async () => {
+    const viki = contact({ userId: VIKI, name: 'Viki' }, K.vikiMac)
+    const offline = contact({ userId: 'u-off', name: 'Michal Novák', macLastSeen: Date.now() - 3_600_000, online: false }, K.stranger)
+    const noApp = contact({ userId: 'u-none', name: 'Jana' })
+    member([], [dominik(), noApp, offline, viki])
+    h.results['messages:send'] = { ok: true, ref: 'x' }
+    const view = render(<App />)
+    const title = await screen.findByRole('textbox', { name: 'Úkol' })
+    // The first contact with the app is chosen; the old person/agent pair is gone.
+    const picker = screen.getByRole('button', { name: 'Komu: Dominik' })
+    expect(picker).toHaveAttribute('aria-expanded', 'false')
+    expect(title).toHaveAttribute('placeholder', 'Pingni Dominika…')
+    expect(screen.queryByRole('radio', { name: 'Dominik' })).toBeNull()
+
+    fireEvent.click(picker)
+    expect(picker).toHaveAttribute('aria-expanded', 'true')
+    const list = screen.getByRole('group', { name: 'Komu' })
+    const faces = Array.from(list.querySelectorAll('.face')).map((f) => [f.textContent, f.classList.contains('nomac'), !!f.querySelector('.on-dot')])
+    expect(faces).toEqual([
+      ['D', false, true],
+      ['J', true, false],
+      ['MN', false, false],
+      ['V', false, true],
+    ])
+    expect(within(list).getByText('Nemá appku')).toBeInTheDocument()
+
+    fireEvent.click(within(list).getByRole('radio', { name: 'Viki' }), { detail: 1 })
+    expect(picker).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Komu: Viki' })).toBeInTheDocument()
+    expect(title).toHaveAttribute('placeholder', 'Pingni Viki…')
+
+    await sendTitle('Máš chvilku?')
+    await waitFor(() => expect(mutation('messages:send')).toHaveBeenCalledTimes(1))
+    expect(sends()[0].to).toBe(VIKI)
+    expect(sends()[0].envelopes.map((e: { deviceId: string }) => e.deviceId)).toEqual([`mac-${VIKI}`])
+    expect(await openFor(K.vikiMac.privateKey, 'title', sends()[0].ref, sends()[0].envelopes[0], VIKI)).toBe('Máš chvilku?')
+
+    // Picking the one without the app greys out sending.
+    fireEvent.click(screen.getByRole('button', { name: 'Komu: Viki' }))
+    fireEvent.click(within(list).getByRole('radio', { name: 'Jana, nemá appku' }), { detail: 1 })
+    expect(screen.getByRole('button', { name: 'Komu: Jana, nemá appku' })).toHaveAttribute('title', 'Nemá appku')
+    expect(screen.getByRole('button', { name: 'Poslat' })).toHaveAttribute('aria-disabled', 'true')
+
+    // The agent is a toggle next to the picker. With 2+ contacts each row says who it went to.
+    expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(sentToggle())
+    expect(view.container.querySelector('.it-who')).toHaveAttribute('title', 'Viki')
+  })
+
+  it('the picker closes with Escape and a press outside, and Enter does not send', async () => {
+    member([], [dominik(), contact({ userId: VIKI, name: 'Viki' }, K.vikiMac)])
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Úkol' })
+    const picker = screen.getByRole('button', { name: 'Komu: Dominik' })
+    fireEvent.click(picker)
+    const viki = within(screen.getByRole('group', { name: 'Komu' })).getByRole('radio', { name: 'Viki' })
+    fireEvent.keyDown(viki, { key: 'Enter' })
+    expect(picker).toHaveAttribute('aria-expanded', 'false')
+    expect(picker).toHaveFocus()
+    fireEvent.click(picker)
+    fireEvent.keyDown(viki, { key: 'Escape' })
+    expect(picker).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(picker)
+    fireEvent.pointerDown(document.body)
+    expect(picker).toHaveAttribute('aria-expanded', 'false')
+    expect(mutation('messages:send')).not.toHaveBeenCalled()
+  })
+})
+
+describe('the sent list opens on this device', () => {
+  it('opens the later options with day, time and the six repeat options', async () => {
+    member()
     render(<App />)
     const when = await screen.findByRole('button', { name: 'Poslat později' })
     expect(when).toHaveAttribute('aria-expanded', 'false')
@@ -257,77 +449,130 @@ describe('the form and the sent list', () => {
     ])
   })
 
-  it('shows the status word of every row', async () => {
+  it('decrypts every row and shows its status word', async () => {
     const now = Date.now()
-    member([
-      row({ taskRef: 'a', status: 'queued' }),
-      row({ taskRef: 'b', status: 'popped' }),
-      row({ taskRef: 'c', status: 'seen' }),
-      row({ taskRef: 'd', status: 'seen', typingUntil: now + 5000 }),
-      row({ taskRef: 'e', status: 'replied', reply: 'Jdu na to' }),
-      row({ taskRef: 'f', status: 'done' }),
-      row({ taskRef: 'g', status: 'snoozed', snoozedUntil: now + 10 * 60_000 - 1000 }),
-      row({ taskRef: 'h', status: 'waiting', dueAt: null }),
-      row({ taskRef: 'i', status: 'queued', title: null }),
-    ])
+    const rows = [
+      await sentRow(K.me, { status: 'queued' }),
+      await sentRow(K.me, { status: 'popped' }),
+      await sentRow(K.me, { status: 'seen' }),
+      await sentRow(K.me, { status: 'seen', typingUntil: now + 5000 }),
+      await sentRow(K.me, { status: 'replied', replyText: 'Jdu na to' }),
+      await sentRow(K.me, { status: 'done' }),
+      await sentRow(K.me, { status: 'snoozed', snoozedUntil: now + 10 * 60_000 - 1000 }),
+      await sentRow(K.me, { status: 'waiting' }),
+      await sentRow(K.me, { status: 'waiting', dueAt: new Date(new Date(now + 86_400_000).setHours(9, 30, 0, 0)).getTime() }),
+    ]
+    member(rows)
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Úkol' })
     expect(view.container.querySelectorAll('.it')).toHaveLength(0)
-    expect(sentToggle()).toHaveAccessibleName('Odeslané: 9')
+    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Odeslané: 9, nová odpověď'))
     fireEvent.click(sentToggle())
-    await waitFor(() => expect(view.container.querySelectorAll('.it')).toHaveLength(9))
-    // Icon only: no status word is on screen, it is the tooltip and the spoken text.
-    expect(view.container.querySelectorAll('.st small')).toHaveLength(0)
-    expect(shownWords(view.container)).toEqual(['letí', 'vyskočilo', 'viděl', 'píše', 'odpověď', 'hotovo', 'za 10 min', 'čeká', 'letí'])
+    await waitFor(() => expect(screen.getAllByText('Pošli mi fotky z hor')).toHaveLength(9))
+    expect(shownWords(view.container)).toEqual(['letí', 'vyskočilo', 'viděl', 'píše', 'odpověď', 'hotovo', 'za 10 min', 'čeká', 'zítra 9:30'])
     expect(screen.getByText('Jdu na to')).toBeInTheDocument()
     expect(view.container.querySelectorAll('.it.gone')).toHaveLength(1)
-    expect(view.container.querySelectorAll('.it-ph')).toHaveLength(1)
   })
 
-  it('acks a pending reply once, and keeps showing it after the server forgets it', async () => {
-    const pending = row({ taskRef: 'r1', status: 'replied', reply: 'Za chvíli', replyAt: 111, replyPending: true })
+  it('a text sealed for another device says so instead of failing', async () => {
+    member([
+      await sentRow(K.me, { text: null, status: 'seen' }),
+      await sentRow(K.stranger, { text: 'Cizí klíč', status: 'replied', replyText: 'Taky cizí' }),
+      { ...(await sentRow(K.me, { text: 'Ráno', status: 'replied' })), replyAt: Date.now() },
+    ])
+    h.results['messages:ackReply'] = true
+    const view = render(<App />)
+    await screen.findByRole('textbox', { name: 'Úkol' })
+    fireEvent.click(sentToggle())
+    await waitFor(() => expect(screen.getAllByText('Text je na jiném zařízení.')).toHaveLength(2))
+    expect(screen.getByText('Ráno')).toBeInTheDocument()
+    expect(screen.getAllByText('Odpověď je na jiném zařízení.')).toHaveLength(2)
+    expect(screen.queryByText('Cizí klíč')).toBeNull()
+    expect(screen.queryByText('Taky cizí')).toBeNull()
+    expect(view.container.querySelectorAll('.it-ph')).toHaveLength(0)
+  })
+
+  it('acks a shown reply once and keeps it here after the server drops this copy', async () => {
+    const pending = await sentRow(K.me, { status: 'replied', replyText: 'Za chvíli' })
     member([pending])
-    h.results['tasks:ackReply'] = true
+    h.results['messages:ackReply'] = true
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Úkol' })
 
     // Closed list: the reply is not on screen, so it is not acked. The icon wears a badge instead.
-    expect(sentToggle()).toHaveAccessibleName('Odeslané: 1, nová odpověď')
+    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Odeslané: 1, nová odpověď'))
     expect(screen.getByTestId('reply-badge')).toBeInTheDocument()
-    expect(screen.queryByText('Za chvíli')).toBeNull()
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    expect(mutation('tasks:ackReply')).not.toHaveBeenCalled()
+    expect(mutation('messages:ackReply')).not.toHaveBeenCalled()
 
     fireEvent.click(sentToggle())
     await screen.findByText('Za chvíli')
-    await waitFor(() => expect(mutation('tasks:ackReply')).toHaveBeenCalledWith({ taskRef: 'r1' }))
+    await waitFor(() => expect(mutation('messages:ackReply')).toHaveBeenCalledWith({ ref: pending.ref, deviceId: WEB }))
+    expect(await vaultGet('replies')).toEqual({ [pending.ref]: 'Za chvíli' })
+
+    // The server dropped this device's copy: the row keeps the text, not "another device".
+    member([{ ...pending, reply: null }])
+    view.rerender(<App />)
+    expect(mutation('messages:ackReply')).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Za chvíli')).toBeInTheDocument()
+    expect(screen.queryByText('Odpověď je na jiném zařízení.')).toBeNull()
     expect(screen.queryByTestId('reply-badge')).toBeNull()
 
-    member([{ ...pending }])
-    view.rerender(<App />)
-    await act(async () => {
-      document.dispatchEvent(new Event('visibilitychange'))
-    })
-    member([{ ...pending, reply: undefined, replyAt: undefined, replyPending: false }])
-    view.rerender(<App />)
-
-    expect(mutation('tasks:ackReply')).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Za chvíli')).toBeInTheDocument()
-
-    // Closing and opening again keeps the reply, and does not ack it twice.
+    // A reload: the reply comes back from this browser's own store.
+    cleanup()
+    resetDeviceKey()
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Úkol' })
     fireEvent.click(sentToggle())
-    expect(screen.queryByText('Za chvíli')).toBeNull()
-    fireEvent.click(sentToggle())
-    expect(screen.getByText('Za chvíli')).toBeInTheDocument()
-    expect(mutation('tasks:ackReply')).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Za chvíli')).toBeInTheDocument()
+    expect(mutation('messages:ackReply')).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('connect your agent', () => {
+  it('a small button under the form opens one sentence to copy and the repo link', async () => {
+    member()
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const view = render(<App />)
+    const button = await screen.findByRole('button', { name: 'Connect your agent' })
+    expect(view.container.querySelectorAll('.cn-faces .ico')).toHaveLength(3)
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    const sentence = 'Install pingme from https://github.com/kroufekd/pingme and connect it to my account.'
+    // Closed, the panel is out of reach (the stylesheet also takes it out of the layout).
+    const panel = screen.getByText(sentence).closest('.cn-p')
+    expect(panel).toHaveAttribute('aria-hidden', 'true')
+    expect(panel).not.toHaveClass('on')
+    // It is the last thing on the page, after the sent list: opening it moves nothing above.
+    expect(view.container.querySelector('main')?.lastElementChild).toHaveClass('cn')
+
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(panel).not.toHaveAttribute('aria-hidden')
+    expect(panel).toHaveClass('on')
+    expect(screen.getByRole('link', { name: /github\.com\/kroufekd\/pingme/ })).toHaveAttribute('href', 'https://github.com/kroufekd/pingme')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zkopírovat' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(sentence))
+    expect(await screen.findByRole('button', { name: 'Zkopírováno' })).toBeInTheDocument()
+  })
+
+  it('without a clipboard it selects the sentence instead of failing', async () => {
+    member()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => Promise.reject(new Error('denied'))) }, configurable: true })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect your agent' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Zkopírovat' }))
+    await waitFor(() => expect(window.getSelection()?.toString()).toContain('Install pingme'))
+    expect(screen.getByRole('button', { name: 'Zkopírovat' })).toBeInTheDocument()
   })
 })
 
 describe('validation', () => {
   it('never leaves validation to the browser', async () => {
-    member([])
+    member()
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Úkol' })
     const forms = Array.from(view.container.querySelectorAll('form'))
@@ -445,7 +690,7 @@ describe('validation', () => {
   })
 
   it('task: sending nothing nudges the field without a visible message', async () => {
-    member([])
+    member()
     render(<App />)
     const title = await screen.findByRole('textbox', { name: 'Úkol' })
     fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
@@ -453,7 +698,7 @@ describe('validation', () => {
     expect(title).toHaveFocus()
     expect(title.closest('.line')).toHaveClass('nudge-a')
     expect(screen.getByText('Napiš, co je potřeba.')).toHaveClass('vh')
-    expect(mutation('relay:create')).not.toHaveBeenCalled()
+    expect(mutation('messages:send')).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
     expect(title.closest('.line')).toHaveClass('nudge-b')
@@ -463,7 +708,7 @@ describe('validation', () => {
   })
 
   it('task: the count shows only near the limit', async () => {
-    member([])
+    member()
     const view = render(<App />)
     const title = await screen.findByRole('textbox', { name: 'Úkol' })
     const count = view.container.querySelector('#u-count')
@@ -480,7 +725,7 @@ describe('validation', () => {
   })
 
   it('task: "later" in the past is marked at once and is not sent', async () => {
-    member([])
+    member()
     render(<App />)
     const title = await screen.findByRole('textbox', { name: 'Úkol' })
     fireEvent.click(screen.getByRole('button', { name: 'Poslat později' }))
@@ -495,7 +740,7 @@ describe('validation', () => {
 
     fireEvent.change(title, { target: { value: 'Zalij kytky' } })
     fireEvent.click(screen.getByRole('button', { name: 'Poslat' }))
-    expect(mutation('relay:create')).not.toHaveBeenCalled()
+    expect(mutation('messages:send')).not.toHaveBeenCalled()
     expect(title).toHaveValue('Zalij kytky')
 
     fireEvent.change(day, { target: { value: '2999-01-01' } })

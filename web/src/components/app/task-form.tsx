@@ -1,38 +1,49 @@
 import { useRef, useState } from 'react'
 import type { FormEvent, ReactNode, Ref } from 'react'
+import { pingPlaceholder } from '@/lib/people'
 import { REPEAT_OPTIONS, URGENCIES, urgencyOf } from '@/lib/tasks'
-import type { Recipient, Urgency } from '@/lib/tasks'
+import type { Urgency } from '@/lib/tasks'
 import { DAY_MS, MAX_DAYS, dateTime, dayKey, laterDefault, timeKey } from '@/lib/time'
 import { charsLeft, checkLater } from '@/lib/validate'
 import type { Repeat } from '@/lib/time'
 import { Icon } from './icon'
+import { NO_APP, PeoplePicker } from './people-picker'
+import type { Person } from './people-picker'
 import { useNudge } from './sign-in'
 
 export const MAX_TITLE = 200
 
-export type NewTask = { title: string; urgency: Urgency; dueAt: number; repeat?: Repeat; to: Recipient }
+/** `to` is the recipient's userId; `forAgent` sends it to their agent instead. */
+export type NewTask = { title: string; urgency: Urgency; dueAt: number; repeat?: Repeat; to: string; forAgent: boolean }
 export type SendResult = { ok: true } | { ok: false; error: string }
 
 const NOTES: Record<string, string> = {
   'no-time': 'Vyber den a čas.',
   'past-time': 'Tenhle čas už byl.',
   'bad-time': 'Tenhle čas nejde.',
+  'no-device': `${NO_APP}.`,
+  'rate-limited': 'Moc pingů. Zkus to za chvíli.',
 }
 const FAILED = 'Neodešlo. Zkus to znovu.'
 const EMPTY = 'Napiš, co je potřeba.'
-const RECIPIENTS: { value: Recipient; word: string; icon: string }[] = [
-  { value: 'dominik', word: 'Dominik', icon: 'user' },
-  { value: 'agent', word: 'Agent', icon: 'robot' },
-]
+const AGENT = 'Agent'
 const LATER = 'Poslat později'
+
+/** Who the form sends to when nobody was picked: the first contact that has the app. */
+function defaultPerson(people: Person[]) {
+  return people.find((p) => p.hasMac) ?? people[0] ?? null
+}
 
 export function TaskForm({
   on,
+  people,
   onSend,
   panelRef,
   aside,
 }: {
   on: boolean
+  /** The member's contacts; null while they load. */
+  people: Person[] | null
   onSend: (task: NewTask) => Promise<SendResult>
   panelRef: Ref<HTMLFormElement>
   /** Sits at the right end of the row of small controls (the sent-list toggle). */
@@ -40,8 +51,13 @@ export function TaskForm({
 }) {
   const titleRef = useRef<HTMLInputElement>(null)
   const [title, setTitle] = useState('')
-  // Kept after sending: several messages for the agent in a row are common.
-  const [to, setTo] = useState<Recipient>('dominik')
+  // Both kept after sending: several messages for the same person or agent in a row are common.
+  const [picked, setPicked] = useState<string | null>(null)
+  const [forAgent, setForAgent] = useState(false)
+  const list = people ?? []
+  const chosen = list.find((p) => p.userId === picked) ?? defaultPerson(list)
+  // Without the app nothing can reach them. While contacts load, sending just waits for them.
+  const blocked = people !== null && !chosen?.hasMac
   const [urgency, setUrgency] = useState<Urgency>('green')
   const [later, setLater] = useState(false)
   const [day, setDay] = useState('')
@@ -75,10 +91,15 @@ export function TaskForm({
       titleRef.current?.focus()
       return
     }
+    if (blocked || !chosen) {
+      nudge()
+      if (chosen) setNote(NOTES['no-device'])
+      return
+    }
     const now = Date.now()
     let dueAt = now
     // The agent gets it now, once.
-    if (later && to === 'dominik') {
+    if (later && !forAgent) {
       const when = checkLater(day, time, now)
       if (!when.ok) {
         nudgeLater()
@@ -86,7 +107,7 @@ export function TaskForm({
       }
       dueAt = when.at
     }
-    const task: NewTask = { title: text, urgency, dueAt, repeat: later && repeat && to === 'dominik' ? repeat : undefined, to }
+    const task: NewTask = { title: text, urgency, dueAt, repeat: later && repeat && !forAgent ? repeat : undefined, to: chosen.userId, forAgent }
     const before = { title, urgency, later, day, time, repeat }
 
     // The row is in the sent list right away, the form is ready for the next one.
@@ -114,7 +135,7 @@ export function TaskForm({
 
   // Only read the clock once the panel is open, so the server render matches the first client render.
   const today = later ? Date.now() : 0
-  const laterOn = later && to === 'dominik'
+  const laterOn = later && !forAgent
   // The same check as on send, shown as soon as the picked time is off.
   const when = laterOn ? checkLater(day, time, Date.now()) : null
   const laterBad = when && !when.ok ? NOTES[when.error] : null
@@ -133,7 +154,7 @@ export function TaskForm({
         <span aria-hidden="true">{left ?? 0}</span>
         <span className="vh">{left === null ? '' : `Zbývá znaků: ${left}`}</span>
       </span>
-      <label className="vh" htmlFor="u-title">{to === 'agent' ? 'Zpráva pro agenta' : 'Úkol'}</label>
+      <label className="vh" htmlFor="u-title">{forAgent ? 'Zpráva pro agenta' : 'Úkol'}</label>
       <div className={`line ${nudgeCls}`.trim()}>
         <input
           ref={titleRef}
@@ -141,7 +162,7 @@ export function TaskForm({
           id="u-title"
           name="title"
           type="text"
-          placeholder={to === 'agent' ? 'Zadej práci agentovi…' : 'Pingni Dominika…'}
+          placeholder={forAgent ? 'Zadej práci agentovi…' : pingPlaceholder(chosen?.name)}
           autoComplete="off"
           enterKeyHint="send"
           maxLength={MAX_TITLE}
@@ -154,7 +175,7 @@ export function TaskForm({
           aria-invalid={empty || undefined}
           aria-describedby={left === null ? 'u-form-note' : 'u-form-note u-count'}
         />
-        <button type="submit" className="go" aria-label="Poslat" title="Poslat">
+        <button type="submit" className="go" aria-label="Poslat" title={blocked && chosen ? NO_APP : 'Poslat'} aria-disabled={blocked || undefined}>
           <span key={flown} className={flown ? 'go-i fly' : 'go-i'}>
             <Icon name="send" size={20} />
           </span>
@@ -162,28 +183,70 @@ export function TaskForm({
         <span key={`sweep-${flown}`} className={flown ? 'sweep run' : 'sweep'} aria-hidden="true" />
       </div>
       <div className="tools">
-        <fieldset className="tos" data-to={to}>
-          <legend className="vh">Pro koho</legend>
-          {RECIPIENTS.map((r) => (
-            <label key={r.value} title={r.word}>
+        {list.length >= 2 && chosen ? (
+          <>
+            <PeoplePicker
+              people={list}
+              chosen={chosen}
+              onPick={(id) => {
+                setPicked(id)
+                setNote(null)
+              }}
+            />
+            <button
+              type="button"
+              className="tool ag"
+              aria-pressed={forAgent}
+              aria-label={AGENT}
+              title={AGENT}
+              onClick={() => {
+                if (!forAgent) setLater(false)
+                setForAgent(!forAgent)
+                setNote(null)
+              }}
+            >
+              <Icon name="robot" />
+            </button>
+          </>
+        ) : (
+          <fieldset className="tos" data-to={forAgent ? 'agent' : 'person'}>
+            <legend className="vh">Pro koho</legend>
+            <label title={!chosen ? undefined : chosen.hasMac ? chosen.name : NO_APP} className={chosen && !chosen.hasMac ? 'nomac' : undefined}>
               <input
                 type="radio"
                 name="to"
-                value={r.value}
-                aria-label={r.word}
-                checked={to === r.value}
+                value="person"
+                aria-label={chosen ? (chosen.hasMac ? chosen.name : `${chosen.name}, ${NO_APP.toLowerCase()}`) : 'Člověk'}
+                checked={!forAgent}
                 onChange={() => {
-                  setTo(r.value)
-                  if (r.value === 'agent') setLater(false)
+                  setForAgent(false)
                   setNote(null)
                 }}
               />
               <span>
-                <Icon name={r.icon} />
+                <Icon name="user" />
+                {chosen?.hasMac && chosen.online && <i className="on-dot" />}
               </span>
             </label>
-          ))}
-        </fieldset>
+            <label title={AGENT}>
+              <input
+                type="radio"
+                name="to"
+                value="agent"
+                aria-label={AGENT}
+                checked={forAgent}
+                onChange={() => {
+                  setForAgent(true)
+                  setLater(false)
+                  setNote(null)
+                }}
+              />
+              <span>
+                <Icon name="robot" />
+              </span>
+            </label>
+          </fieldset>
+        )}
         <fieldset className="urgs">
           <legend className="vh">Jak moc to spěchá</legend>
           {URGENCIES.map((u) => (
@@ -195,14 +258,14 @@ export function TaskForm({
         </fieldset>
         <button
           type="button"
-          className={to === 'agent' ? 'tool off' : 'tool'}
+          className={forAgent ? 'tool off' : 'tool'}
           aria-expanded={later}
           aria-controls="u-later"
           aria-label={LATER}
           title={LATER}
           onClick={toggleLater}
-          inert={to === 'agent'}
-          aria-hidden={to === 'agent' || undefined}
+          inert={forAgent}
+          aria-hidden={forAgent || undefined}
         >
           <Icon name="clock" />
         </button>

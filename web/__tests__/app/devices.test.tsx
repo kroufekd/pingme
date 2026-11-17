@@ -1,0 +1,152 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NOTICE_MS, newMacs } from '@/components/app/devices'
+import { resetDeviceKey } from '@/lib/device-key'
+import type { ContactsView, MyDevice } from '@/lib/network'
+import { resetVault, vaultSet } from '@/lib/vault'
+import { DOMINIK, ME, WEB, contact, contactsView, keys } from './net-fixtures'
+
+// Pair phishing regression, the web side: every device on the account is visible and removable,
+// and a Mac that joins later is announced on the browsers that were already there.
+
+const h = vi.hoisted(() => ({
+  auth: { isLoading: false, isAuthenticated: false },
+  queries: {} as Record<string, unknown>,
+  mutations: {} as Record<string, ReturnType<typeof vi.fn>>,
+  results: {} as Record<string, unknown>,
+}))
+
+vi.mock('convex/react', async () => {
+  const { getFunctionName } = await import('convex/server')
+  return {
+    useConvexAuth: () => h.auth,
+    useQuery: (ref: never, args: unknown) => (args === 'skip' ? undefined : h.queries[getFunctionName(ref)]),
+    useMutation: (ref: never) => {
+      const name = getFunctionName(ref)
+      if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
+      return h.mutations[name]
+    },
+  }
+})
+
+vi.mock('@convex-dev/auth/react', () => ({
+  useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn(async () => {}) }),
+}))
+
+const { App } = await import('@/components/app/app')
+
+function mutation(name: string) {
+  if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
+  return h.mutations[name]
+}
+
+let K: Awaited<ReturnType<typeof keys>>
+beforeAll(async () => {
+  K = await keys()
+})
+
+const HOUR = 3_600_000
+const DAY = 24 * HOUR
+
+function dev(over: Partial<MyDevice> & { deviceId: string; name: string }): MyDevice {
+  return { kind: 'mac', publicKey: K.myMac.publicKey, createdAt: Date.now() - 30 * DAY, lastSeen: Date.now(), ...over }
+}
+
+/** A member whose account has exactly `devices`; this browser is WEB. */
+function member(devices: MyDevice[]) {
+  h.auth.isAuthenticated = true
+  h.queries['senders:me'] = { status: 'member', name: 'Viki', userId: ME, onboarded: true }
+  const view = contactsView(K.me, [contact({ userId: DOMINIK, name: 'Dominik' }, K.dominikMac)]) as Extract<ContactsView, { status: 'member' }>
+  h.queries['contacts:list'] = { ...view, me: { ...view.me, devices } }
+  h.queries['messages:mine'] = { status: 'member', deviceActive: true, rows: [] }
+  h.results['devices:registerWeb'] = { ok: true, deviceId: WEB }
+  h.results['devices:revoke'] = true
+}
+
+const browser = (createdAt = Date.now() - 10 * DAY) => dev({ deviceId: WEB, kind: 'web', name: 'Chrome · Mac', publicKey: K.me.publicKey, createdAt })
+
+beforeEach(async () => {
+  h.auth.isLoading = false
+  h.auth.isAuthenticated = false
+  h.queries = {}
+  h.mutations = {}
+  h.results = {}
+  resetVault()
+  resetDeviceKey()
+  await vaultSet('deviceKey', K.me)
+  localStorage.clear()
+  window.history.replaceState(null, '', '/')
+})
+
+afterEach(() => cleanup())
+
+describe('devices on the account', () => {
+  it('lists every device; removing one that is not this browser takes two clicks', async () => {
+    member([browser(), dev({ deviceId: 'mac-me', name: 'Vikin Mac' }), dev({ deviceId: 'mac-evil', name: 'MacBook Pro', createdAt: Date.now() - 20 * DAY })])
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: /^Zařízení/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    // In one row with "Connect your agent"; the list opens under that row, last on the page.
+    expect(toggle.closest('.cn-bar')).toContainElement(screen.getByRole('button', { name: 'Connect your agent' }))
+    fireEvent.click(toggle)
+    const list = screen.getByRole('list', { name: 'Zařízení' })
+    expect(list.parentElement?.lastElementChild).toBe(list)
+    const rows = within(list).getAllByRole('listitem')
+    // This browser first, then the newest, so an unknown Mac is near the top.
+    expect(rows.map((r) => r.querySelector('.dv-name')?.textContent)).toEqual(['Chrome · Mac', 'MacBook Pro', 'Vikin Mac'])
+    // This browser is marked and cannot remove itself from here.
+    expect(within(rows[0]).getByText('tenhle')).toBeInTheDocument()
+    expect(within(rows[0]).queryByRole('button')).toBeNull()
+
+    const remove = within(list).getByRole('button', { name: 'Odebrat MacBook Pro' })
+    fireEvent.click(remove)
+    expect(mutation('devices:revoke')).not.toHaveBeenCalled()
+    expect(remove).toHaveAccessibleName('Potvrdit: Odebrat MacBook Pro')
+    expect(remove).toHaveTextContent('Odebrat')
+    fireEvent.click(remove)
+    await waitFor(() => expect(mutation('devices:revoke')).toHaveBeenCalledWith({ deviceId: 'mac-evil' }))
+    expect(mutation('devices:revoke')).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces a Mac that joined after this browser until it is confirmed', async () => {
+    member([browser(), dev({ deviceId: 'mac-me', name: 'Vikin Mac' }), dev({ deviceId: 'mac-new', name: 'MacBook Pro', createdAt: Date.now() - HOUR })])
+    const view = render(<App />)
+    const notice = await screen.findByRole('status', { name: 'Nový Mac' })
+    expect(notice).toHaveTextContent('MacBook Pro')
+    // First in reading order, above the form.
+    expect(view.container.querySelector('main > .dv-new')).toBe(notice)
+
+    fireEvent.click(within(notice).getByRole('button', { name: 'Je můj' }))
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Nový Mac' })).toBeNull())
+    expect(mutation('devices:revoke')).not.toHaveBeenCalled()
+    // Remembered in this browser.
+    cleanup()
+    render(<App />)
+    await screen.findByRole('button', { name: /^Zařízení/ })
+    expect(screen.queryByRole('status', { name: 'Nový Mac' })).toBeNull()
+  })
+
+  it('removes the new Mac straight from the notice', async () => {
+    member([browser(), dev({ deviceId: 'mac-new', name: 'MacBook Pro', createdAt: Date.now() - HOUR })])
+    render(<App />)
+    const notice = await screen.findByRole('status', { name: 'Nový Mac' })
+    fireEvent.click(within(notice).getByRole('button', { name: 'Odebrat MacBook Pro' }))
+    await waitFor(() => expect(mutation('devices:revoke')).toHaveBeenCalledWith({ deviceId: 'mac-new' }))
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Nový Mac' })).toBeNull())
+  })
+
+  it('only Macs newer than this browser and less than a week old are announced', () => {
+    const now = Date.now()
+    const self = browser(now - 10 * DAY)
+    const fresh = dev({ deviceId: 'a', name: 'A', createdAt: now - HOUR })
+    const older = dev({ deviceId: 'b', name: 'B', createdAt: now - 11 * DAY })
+    const stale = dev({ deviceId: 'c', name: 'C', createdAt: now - NOTICE_MS - 1 })
+    const web = dev({ deviceId: 'd', name: 'Safari', kind: 'web', createdAt: now - HOUR })
+    const all = [self, fresh, older, stale, web]
+    expect(newMacs(all, WEB, now, new Set()).map((d) => d.deviceId)).toEqual(['a'])
+    expect(newMacs(all, WEB, now, new Set(['a']))).toEqual([])
+    // A browser the server does not list yet announces nothing.
+    expect(newMacs(all, null, now, new Set())).toEqual([])
+    expect(newMacs(all, 'unknown', now, new Set())).toEqual([])
+  })
+})
