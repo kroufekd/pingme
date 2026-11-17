@@ -2259,11 +2259,42 @@ body vite-error-overlay {
     outline-offset: 2px;
   }
   .cn-cmd.ok .cn-c {
-    background: var(--g);
     color: #fff;
+    animation: cn-pop 0.5s var(--spring);
   }
-  /* Both labels share one cell, so the pill keeps the width of the longer one. */
+  /* Copied: green fills the pill from its middle. */
+  .cn-c::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--g);
+    opacity: 0;
+    transform: scale(0.2);
+    transition:
+      opacity 0.25s var(--ease),
+      transform 0.25s var(--ease);
+  }
+  .cn-cmd.ok .cn-c::before {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 0.15s var(--ease),
+      transform 0.45s var(--spring);
+  }
+  /* A ring leaves the pill on every copy. */
+  .cn-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    animation: cn-ring 0.7s ease-out forwards;
+  }
+  /* Both labels share one cell, so the pill keeps the width of the longer one.
+     The old one leaves upwards, the new one comes up from below. */
   .cn-c-l {
+    position: relative;
+    z-index: 1;
     display: inline-flex;
     grid-area: 1 / 1;
     align-items: center;
@@ -2271,14 +2302,24 @@ body vite-error-overlay {
     gap: 6px;
     padding-top: 2px;
     opacity: 0;
-    transform: translateY(6px);
+    filter: blur(2px);
+    transform: translateY(9px);
     transition:
       opacity 0.2s var(--ease),
-      transform 0.4s var(--spring);
+      filter 0.2s var(--ease),
+      transform 0.45s var(--spring);
+  }
+  .cn-c-l:first-child:not(.on) {
+    transform: translateY(-9px);
   }
   .cn-c-l.on {
     opacity: 1;
+    filter: none;
     transform: none;
+  }
+  /* The check draws itself from left to right. */
+  .cn-cmd.ok .cn-c-l.on .ico {
+    animation: cn-check 0.35s var(--ease) 0.12s backwards;
   }
   /* One shine across the pill once the panel has settled, to say it is the thing to press. */
   .cn-c::after {
@@ -2372,6 +2413,33 @@ body vite-error-overlay {
     background-position: -20% 0;
   }
 }
+@keyframes cn-pop {
+  0% {
+    transform: scale(0.92);
+  }
+  45% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes cn-ring {
+  from {
+    box-shadow: 0 0 0 0 rgba(78, 160, 90, 0.55);
+  }
+  to {
+    box-shadow: 0 0 0 12px rgba(78, 160, 90, 0);
+  }
+}
+@keyframes cn-check {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
 @keyframes dv-pop {
   from {
     transform: scale(0);
@@ -2393,8 +2461,15 @@ body vite-error-overlay {
   .cn-c::after,
   .rv.on .cn-c::after,
   .cn-sweep,
+  .cn-ring,
+  .cn-cmd.ok .cn-c,
+  .cn-cmd.ok .cn-c-l.on .ico,
   .dv-b-dot {
     animation: none !important;
+  }
+  .cn-c::before,
+  .tf-pop {
+    transition: none !important;
   }
   .cn-sweep {
     display: none;

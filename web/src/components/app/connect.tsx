@@ -115,6 +115,7 @@ export function ConnectAgent({ open, onOpenChange, side, below }: { open: boolea
                   <Icon name="check" size={15} />
                   {COPIED}
                 </span>
+                {shot > 0 && <span key={shot} className="cn-ring" aria-hidden="true" />}
               </button>
               {shot > 0 && <span key={shot} className="cn-sweep" aria-hidden="true" />}
             </div>
