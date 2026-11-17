@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server"
 import { internal } from "./_generated/api"
 import { httpAction } from "./_generated/server"
 import { auth } from "./auth"
+import { addDeviceRoutes } from "./deviceApi"
 import { handleMcp } from "./mcp"
 import { INVITE_TTL, MAX_NAME, MAX_REPLY, MAX_TITLE, isMacKey, sha256Hex } from "./model"
 import type { SnapTask, StatusUpdate, TaskState } from "./validators"
@@ -250,6 +251,10 @@ http.route({
     return result.ok ? json({ ok: true }) : json({ ok: false, error: "not-found" }, 404)
   }),
 })
+
+// ---- Network devices (Authorization: Device <token>), see docs/device-api.md ----
+
+addDeviceRoutes(http)
 
 // ---- MCP for agents (Authorization: Bearer <agent key>) ----
 

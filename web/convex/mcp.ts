@@ -4,6 +4,7 @@ import { internalMutation, internalQuery } from "./_generated/server"
 import type { ActionCtx, QueryCtx } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
 import { HOUR, MAX_TITLE, MINUTE, activeAgentForKeyHash, createTask, ownStatus, sha256Hex } from "./model"
+import { createLegacyMessage, ownerWithMac } from "./network"
 import { taskState, urgency } from "./validators"
 import type { Urgency } from "./validators"
 
@@ -29,7 +30,11 @@ export const agent = internalQuery({
 
 const failure = v.object({ ok: v.literal(false), error: v.string() })
 
-/** Queues a task from an agent, like relay.create. 30 per hour per key. */
+/**
+ * Queues a task from an agent, like relay.create. 30 per hour per key.
+ * Once the owner (env OWNER_EMAIL) has a paired Mac, it goes there as an unencrypted message;
+ * until then it stays on the v2 queue the installed Mac app reads.
+ */
 export const sendMessage = internalMutation({
   args: { senderId: v.id("senders"), title: v.string(), urgency },
   returns: v.union(v.object({ ok: v.literal(true), id: v.string() }), failure),
@@ -42,7 +47,10 @@ export const sendMessage = internalMutation({
     const fresh = sender.rateWindowStart === undefined || now - sender.rateWindowStart >= HOUR
     const count = fresh ? 0 : (sender.rateCount ?? 0)
     if (count >= RATE_LIMIT) return { ok: false as const, error: "rate-limited" }
-    const id = await createTask(ctx, sender, { title, dueAt: now, urgency: args.urgency }, now)
+    const owner = await ownerWithMac(ctx)
+    const id = owner
+      ? await createLegacyMessage(ctx, sender, owner._id, title, args.urgency, now)
+      : await createTask(ctx, sender, { title, dueAt: now, urgency: args.urgency }, now)
     const stale = sender.lastUsedAt === undefined || now - sender.lastUsedAt >= MINUTE
     await ctx.db.patch(sender._id, {
       rateWindowStart: fresh ? now : sender.rateWindowStart,

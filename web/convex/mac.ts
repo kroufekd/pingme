@@ -5,11 +5,13 @@ import { TYPING_TTL, fingerprint, isWatching, statusExpiry, toQueued, touch } fr
 import { queuedCommand, snapTask, statusUpdate } from "./validators"
 import type { StatusUpdate } from "./validators"
 
+/** A v2 status row (from the commands queue). Network rows are never touched over MAC_TOKEN. */
 async function statusRow(ctx: MutationCtx, taskRef: string) {
-  return await ctx.db
+  const rows = await ctx.db
     .query("taskStatus")
     .withIndex("by_taskRef", (q) => q.eq("taskRef", taskRef))
-    .first()
+    .take(5)
+  return rows.find((r) => r.senderId !== undefined && r.toUserId === undefined) ?? null
 }
 
 /**

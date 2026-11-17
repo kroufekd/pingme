@@ -4,23 +4,44 @@ import { getAuthUserId } from "@convex-dev/auth/server"
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import type { MutationCtx } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
-import { activeSenderForUser, currentMember, normalizeEmail } from "./model"
+import { activeSenderForUser, normalizeEmail } from "./model"
+import { cleanName, nameOf, networkMember, removeMember } from "./network"
 import { senderKind } from "./validators"
 
-/** Who the web is talking to. Only an active sender is a member. */
+/**
+ * Who the web is talking to. A member joined the network (or is still an active v2 sender).
+ * `userId` is what the web puts in the AAD; `senderId` exists only for v2 senders.
+ */
 export const me = query({
   args: {},
   returns: v.union(
     v.object({ status: v.literal("signedOut") }),
     v.object({ status: v.literal("notMember"), email: v.string() }),
-    v.object({ status: v.literal("member"), name: v.string(), senderId: v.string(), onboarded: v.boolean() }),
+    v.object({
+      status: v.literal("member"),
+      name: v.string(),
+      userId: v.string(),
+      senderId: v.optional(v.string()),
+      onboarded: v.boolean(),
+      inviterName: v.optional(v.string()),
+    }),
   ),
   handler: async (ctx) => {
-    const m = await currentMember(ctx)
-    if (m.status === "signedOut") return { status: "signedOut" as const }
-    if (m.status === "notInvited") return { status: "notMember" as const, email: m.email }
-    const user = await ctx.db.get(m.sender.userId!)
-    return { status: "member" as const, name: m.name, senderId: m.senderId as string, onboarded: user?.onboardedAt !== undefined }
+    const userId = await getAuthUserId(ctx)
+    if (!userId) return { status: "signedOut" as const }
+    const user = await ctx.db.get(userId)
+    const email = user?.email ? normalizeEmail(user.email) : ""
+    const sender = await activeSenderForUser(ctx, userId)
+    if (!user || (user.memberAt === undefined && !sender)) return { status: "notMember" as const, email }
+    const inviter = user.invitedBy ? await ctx.db.get(user.invitedBy) : null
+    return {
+      status: "member" as const,
+      name: cleanName(user.name) || sender?.name || nameOf(user),
+      userId: userId as string,
+      ...(sender ? { senderId: sender._id as string } : {}),
+      onboarded: user.onboardedAt !== undefined,
+      ...(inviter ? { inviterName: nameOf(inviter) } : {}),
+    }
   },
 })
 
@@ -29,11 +50,8 @@ export const finishOnboarding = mutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    const m = await currentMember(ctx)
-    if (m.status !== "member") return null
-    const userId = await getAuthUserId(ctx)
-    const user = userId ? await ctx.db.get(userId) : null
-    if (user && user.onboardedAt === undefined) await ctx.db.patch(user._id, { onboardedAt: Date.now() })
+    const m = await networkMember(ctx)
+    if (m && m.user.onboardedAt === undefined) await ctx.db.patch(m.userId, { onboardedAt: Date.now() })
     return null
   },
 })
@@ -145,7 +163,8 @@ async function dropInvite(ctx: MutationCtx, email: string, keep: Id<"senders">) 
 
 /**
  * Removes a person or an agent: no call gets through any more, and its queue,
- * statuses, links and code allowlist entry are deleted.
+ * statuses, links and code allowlist entry are deleted. A person also leaves the network:
+ * membership, contacts, devices and its own invite links.
  */
 export const revoke = internalMutation({
   args: { senderId: v.string() },
@@ -154,7 +173,9 @@ export const revoke = internalMutation({
     const id = ctx.db.normalizeId("senders", args.senderId)
     const sender = id ? await ctx.db.get(id) : null
     if (!sender) return { ok: false }
+    const userId = sender.userId
     await ctx.db.patch(sender._id, { status: "revoked", userId: undefined })
+    if (userId && sender.kind === "person") await removeMember(ctx, userId, Date.now())
 
     const emails = new Set<string>()
     if (sender.email) emails.add(sender.email)
@@ -172,7 +193,15 @@ export const revoke = internalMutation({
       .query("taskStatus")
       .withIndex("by_senderId", (q) => q.eq("senderId", sender._id))
       .take(1000)
-    for (const s of statuses) await ctx.db.delete(s._id)
+    for (const s of statuses) {
+      await ctx.db.delete(s._id)
+      // Legacy MCP pings already routed to the owner's paired Mac (network queue).
+      const queued = await ctx.db
+        .query("messages")
+        .withIndex("by_ref", (q) => q.eq("ref", s.taskRef))
+        .take(5)
+      for (const m of queued) if (m.fromSenderId === sender._id) await ctx.db.delete(m._id)
+    }
     const commands = await ctx.db
       .query("commands")
       .withIndex("by_senderId", (q) => q.eq("senderId", sender._id))

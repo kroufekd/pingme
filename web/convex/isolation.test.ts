@@ -283,7 +283,7 @@ describe("isolation between senders", () => {
     )
     expect(bLeft).toEqual([])
     // A is untouched.
-    expect(await A.as.query(api.senders.me, {})).toEqual({ status: "member", name: "Anna", senderId: A.senderId, onboarded: false })
+    expect(await A.as.query(api.senders.me, {})).toEqual({ status: "member", name: "Anna", userId: A.userId, senderId: A.senderId, onboarded: false })
   })
 
   test("an email invite without a sender is never a member", async () => {
@@ -397,7 +397,7 @@ describe("invite links", () => {
     const franta = t.withIdentity({ subject: `${user}|s` })
     expect(await franta.query(api.senders.me, {})).toEqual({ status: "notMember", email: "franta@example.com" })
     expect(await franta.mutation(api.inviteLinks.claim, { token })).toEqual({ ok: true, name: "Franta" })
-    expect(await franta.query(api.senders.me, {})).toEqual({ status: "member", name: "Franta", senderId, onboarded: false })
+    expect(await franta.query(api.senders.me, {})).toEqual({ status: "member", name: "Franta", userId: user, senderId, onboarded: false })
     // The intro shows once per account: after it, every browser of this account skips it.
     await franta.mutation(api.senders.finishOnboarding, {})
     expect(await franta.query(api.senders.me, {})).toMatchObject({ onboarded: true })
@@ -791,9 +791,11 @@ describe("crons", () => {
   test("hourly cleanup is registered next to the snapshot job", async () => {
     const crons = (await import("./crons")).default as unknown as { crons: Record<string, { name: string; schedule: unknown }> }
     expect(Object.keys(crons.crons).sort()).toEqual([
+      "delete expired messages, pairing requests and rate limits",
       "delete expired statuses, invite links and old commands",
       "drop shared list when nobody watches",
     ])
     expect(crons.crons["delete expired statuses, invite links and old commands"].schedule).toMatchObject({ type: "interval", hours: 1 })
+    expect(crons.crons["delete expired messages, pairing requests and rate limits"].schedule).toMatchObject({ type: "interval", minutes: 10 })
   })
 })

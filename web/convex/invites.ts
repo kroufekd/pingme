@@ -4,6 +4,7 @@ import { internalAction, internalMutation, internalQuery, query } from "./_gener
 import type { QueryCtx } from "./_generated/server"
 import { sendEmail } from "./ResendOTP"
 import { normalizeEmail } from "./model"
+import { isOwnerEmail } from "./network"
 
 async function findInvite(ctx: QueryCtx, email: string) {
   return await ctx.db
@@ -12,16 +13,21 @@ async function findInvite(ctx: QueryCtx, email: string) {
     .unique()
 }
 
+/** The owner (env OWNER_EMAIL) may always sign in, so the network can start from nothing. */
+async function allowed(ctx: QueryCtx, email: string) {
+  return isOwnerEmail(email) || (await findInvite(ctx, email)) !== null
+}
+
 /** Lets the sign-in form say "no invite for this email" before sending a code. */
 export const check = query({
   args: { email: v.string() },
   returns: v.boolean(),
-  handler: async (ctx, { email }) => (await findInvite(ctx, email)) !== null,
+  handler: async (ctx, { email }) => await allowed(ctx, email),
 })
 
 export const isInvited = internalQuery({
   args: { email: v.string() },
-  handler: async (ctx, { email }): Promise<boolean> => (await findInvite(ctx, email)) !== null,
+  handler: async (ctx, { email }): Promise<boolean> => await allowed(ctx, email),
 })
 
 export const list = internalQuery({

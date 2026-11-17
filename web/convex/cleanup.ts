@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { internalMutation } from "./_generated/server"
 import { DAY } from "./model"
+import { dropAllowlistIfUnused } from "./network"
 
 const BATCH = 500
 const COMMAND_TTL = 60 * DAY
@@ -33,6 +34,9 @@ export const run = internalMutation({
     for (const link of links) {
       await ctx.db.delete(link._id)
       if (link.claimedAt !== undefined) continue
+      // A network link that nobody used: its email no longer needs a code.
+      if (link.email && link.inviterId) await dropAllowlistIfUnused(ctx, link.email)
+      if (!link.senderId) continue
       const sender = await ctx.db.get(link.senderId)
       if (!sender || sender.status !== "invited") continue
       const others = await ctx.db
@@ -51,6 +55,34 @@ export const run = internalMutation({
     for (const c of commands) await ctx.db.delete(c._id)
 
     return { taskStatus: statuses.length, inviteLinks: links.length, senders, commands: commands.length }
+  },
+})
+
+/**
+ * Every 10 minutes: deletes expired messages (undelivered after 7 days), expired pairing
+ * requests (10 minutes) and finished rate limit windows. Bounded index ranges, as above.
+ */
+export const network = internalMutation({
+  args: {},
+  returns: v.object({ messages: v.number(), pairRequests: v.number(), rateLimits: v.number() }),
+  handler: async (ctx) => {
+    const now = Date.now()
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+      .take(BATCH)
+    for (const m of messages) await ctx.db.delete(m._id)
+    const pairRequests = await ctx.db
+      .query("pairRequests")
+      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+      .take(BATCH)
+    for (const r of pairRequests) await ctx.db.delete(r._id)
+    const rateLimits = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+      .take(BATCH)
+    for (const r of rateLimits) await ctx.db.delete(r._id)
+    return { messages: messages.length, pairRequests: pairRequests.length, rateLimits: rateLimits.length }
   },
 })
 
