@@ -72,6 +72,10 @@ final class Pairing {
     private func run() async {
         let pair = Seal.generateKeyPair()
         let identity = DeviceIdentity(privateKey: Seal.exportPrivateKey(pair.privateKey))
+        // Pairing again replaces this Mac's device. The old one would otherwise stay on the account,
+        // never confirm a ping, and keep the person's inbox full until each ping expires.
+        var oldToken: String?
+        if case .success(let old?) = IdentityStore.load() { oldToken = old.token }
         do {
             // A fresh key for every pairing. The private half is in the Keychain before anything leaves the Mac.
             try IdentityStore.save(identity)
@@ -132,6 +136,8 @@ final class Pairing {
                 self.url = nil
                 state = .done(c.name ?? "")
                 onPaired?(id)
+                // Best effort: if this fails, the old device stays, but the inbox reads newest first, so it buries nothing.
+                if let oldToken, oldToken != token { _ = await api.unpair(token: oldToken) }
                 return
             case .success(.gone):
                 // Expired, already claimed or unknown: it never comes back.

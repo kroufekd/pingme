@@ -531,10 +531,12 @@ async function namer(ctx: QueryCtx) {
 
 /** Messages still waiting for this device, oldest first, at most 50. Only its own envelope. */
 export async function inboxFor(ctx: QueryCtx, device: Doc<"devices">): Promise<InboxItem[]> {
+  // Newest first: rows another of the person's Macs never confirms (off for days, or replaced
+  // without unpairing) stay until they expire, and must not push a new ping out of the window.
   const rows = await ctx.db
     .query("messages")
     .withIndex("by_toUserId", (q) => q.eq("toUserId", device.userId))
-    .order("asc")
+    .order("desc")
     .take(300)
   const name = await namer(ctx)
   const out: InboxItem[] = []
@@ -560,7 +562,7 @@ export async function inboxFor(ctx: QueryCtx, device: Doc<"devices">): Promise<I
     })
     if (out.length >= 50) break
   }
-  return out
+  return out.reverse()
 }
 
 /** Marks messages as delivered to this device. A message goes once every active target has it. */

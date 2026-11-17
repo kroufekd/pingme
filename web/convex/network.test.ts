@@ -521,6 +521,46 @@ describe("invites and contacts", () => {
   })
 })
 
+describe("a Mac that never confirms", () => {
+  test("cannot bury a new ping for the person's other Mac", async () => {
+    const t = setup()
+    const { D, V, dMac, vMac } = await network(t)
+    const old = await pairMac(t, V.as, "Starý Mac")
+    // 320 earlier pings: the live Mac confirmed them, the old one never will, so they stay until they expire.
+    const now = Date.now()
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 320; i++) {
+        await ctx.db.insert("messages", {
+          ref: newRef(),
+          fromUserId: D.userId as Id<"users">,
+          toUserId: V.userId as Id<"users">,
+          forAgent: false,
+          urgency: "green",
+          dueAt: now - HOUR + i,
+          createdAt: now - HOUR + i,
+          expiresAt: now + 6 * DAY,
+          envelopes: seal([vMac.deviceId, old.deviceId]).map((e) => ({ ...e, deviceId: e.deviceId as Id<"devices"> })),
+          deliveredTo: [vMac.deviceId as Id<"devices">],
+        })
+      }
+    })
+    expect((await sync(t, vMac.token)).messages).toEqual([])
+
+    const ref = newRef()
+    expect(
+      await D.as.mutation(api.messages.send, {
+        ref, to: V.userId, forAgent: false, urgency: "red", envelopes: seal([vMac.deviceId, old.deviceId]), titleEnvelopes: seal([dMac.deviceId]),
+      }),
+    ).toEqual({ ok: true, ref })
+    expect((await sync(t, vMac.token)).messages.map((m) => m.ref)).toEqual([ref])
+    // The old Mac, when it comes back, still gets the newest first, oldest of them first.
+    const back = (await sync(t, old.token)).messages
+    expect(back).toHaveLength(50)
+    expect(back.at(-1).ref).toBe(ref)
+    expect(back.map((m) => m.createdAt)).toEqual([...back.map((m) => m.createdAt)].sort((x, y) => x - y))
+  })
+})
+
 describe("contact requests between members", () => {
   test("an invite to someone already in asks first, and either side can end a contact", async () => {
     const t = setup()
