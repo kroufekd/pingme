@@ -1428,7 +1428,7 @@ struct PairCard: View {
                     Waiting()
                     if case .waiting(let code) = model.pair {
                         HStack(spacing: 8) {
-                            Text("Kód do prohlížeče")
+                            Text("Přihlas se, pak opiš")
                                 .font(Geist.font(13, 550))
                                 .foregroundStyle(Ink.on2)
                                 .lineLimit(1)
@@ -1441,7 +1441,7 @@ struct PairCard: View {
                                 .textSelection(.enabled)
                         }
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Kód do prohlížeče: \(code.map(String.init).joined(separator: " "))")
+                        .accessibilityLabel("Nejdřív se přihlas v prohlížeči, pak opiš kód: \(code.map(String.init).joined(separator: " "))")
                     } else {
                         Text("Otevírám prohlížeč")
                             .font(Geist.font(13, 550))
