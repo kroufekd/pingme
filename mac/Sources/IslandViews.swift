@@ -107,6 +107,11 @@ final class IslandModel: ObservableObject {
     @Published var newUrgency: Urgency = .green
     @Published var later = false
     @Published var laterDate = Date()
+    /// Who the new ping goes to: a contact's userId, or nil for this Mac (a note to self).
+    @Published var newTo: String?
+    /// "Sending to Michal...", "Sent to Michal.", or why it did not go.
+    @Published var composeNote = ""
+    @Published var composeBusy = false
     @Published var focusRequest = 0
     // People
     @Published var contacts: [ContactRow] = []
@@ -876,16 +881,32 @@ struct ComposeCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var typing: Bool { !model.newTitle.isEmpty }
+    /// Contacts with the Mac app: the only people a ping can reach.
+    private var pingable: [ContactRow] { model.contacts.filter(\.hasMac) }
+    private var to: ContactRow? { model.newTo.flatMap { id in pingable.first { $0.id == id } } }
+    private var placeholder: String { to.map { "Ping \(Fmt.firstName($0.name))..." } ?? "Note to self..." }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BareField(placeholder: "Note to self...", text: $model.newTitle, font: Geist.font(15, 600),
-                      placeholderFont: Geist.font(15, 500), limit: kTitleMax,
-                      focus: $titleFocused, stillFocused: model.stillFocus == "title", onSubmit: actions.add)
-                .kerning(-0.15)
-                .frame(height: 32)
-                .padding(.top, 4)
-                .accessibilityLabel("Note to self")
+            HStack(spacing: 8) {
+                BareField(placeholder: placeholder, text: $model.newTitle, font: Geist.font(15, 600),
+                          placeholderFont: Geist.font(15, 500), limit: kTitleMax,
+                          focus: $titleFocused, stillFocused: model.stillFocus == "title", onSubmit: actions.add)
+                    .kerning(-0.15)
+                    .accessibilityLabel(to == nil ? "Note to self" : placeholder)
+                if !pingable.isEmpty {
+                    MenuPill(text: to.map { Fmt.firstName($0.name) } ?? "Me", icon: "user", a11y: "To",
+                             items: [("Me", to == nil)] + pingable.map { c in
+                                 (c.online(at: model.now) ? c.name : "\(c.name), offline", c.id == to?.id)
+                             }) { i in
+                        model.newTo = i == 0 || !pingable.indices.contains(i - 1) ? nil : pingable[i - 1].id
+                        model.focusRequest += 1
+                    }
+                    .help("Who gets it")
+                }
+            }
+            .frame(height: 32)
+            .padding(.top, 4)
             if typing {
                 HStack(spacing: 6) {
                     UrgencyWords(selection: $model.newUrgency)
@@ -901,8 +922,9 @@ struct ComposeCard: View {
                     .help("Later")
                     Button(action: actions.add) { Icon(name: "send", size: 14, color: .black) }
                         .buttonStyle(RoundStyle(size: 28))
-                        .accessibilityLabel("Add task")
-                        .help("Add task")
+                        .disabled(model.composeBusy)
+                        .accessibilityLabel(to == nil ? "Add task" : "Send ping")
+                        .help(to == nil ? "Add task" : "Send ping")
                 }
                 .padding(.top, 6)
                 .transition(.opacity)
@@ -912,7 +934,16 @@ struct ComposeCard: View {
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
                 }
             }
+            if !model.composeNote.isEmpty {
+                Text(model.composeNote)
+                    .font(Geist.font(12.5, 500))
+                    .foregroundStyle(Ink.on3)
+                    .lineLimit(2)
+                    .padding(.top, 8)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
         }
+        .onChange(of: model.newTitle) { _, _ in if !model.composeBusy && model.newTo != nil { model.composeNote = "" } }
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.35), value: model.later)
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.3), value: typing)
         .onAppear { titleFocused = true }

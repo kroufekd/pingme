@@ -10,7 +10,7 @@ enum SnapshotState: String, CaseIterable {
     case taskGreen = "task-green", taskOrange = "task-orange", taskRed = "task-red", taskAgent = "task-agent"
     case taskHover = "task-hover"
     case replyOpen = "reply-open", replyTyping = "reply-typing", replySent = "reply-sent"
-    case newEmpty = "new-empty", new, newLater = "new-later"
+    case newEmpty = "new-empty", new, newLater = "new-later", newTo = "new-to", newSent = "new-sent"
     case waiting, waitingHover = "waiting-hover"
     case people, peopleHover = "people-hover", peopleAdd = "people-add"
     // Extra checks, not frames of the design.
@@ -25,7 +25,7 @@ enum SnapshotState: String, CaseIterable {
     var deskHeight: CGFloat {
         switch self {
         case .idle, .idleHover, .idleWaiting, .idleWaitingHover: return 120
-        case .replyOpen, .replyTyping, .replySent, .newLater: return 210
+        case .replyOpen, .replyTyping, .replySent, .newLater, .newTo, .newSent: return 210
         case .waiting, .waitingHover: return 230
         case .people, .peopleHover, .peopleAdd, .peopleInvited: return 260
         case .peopleDetail: return 380
@@ -151,10 +151,16 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             model.replyDelivery = "Sent, Viki sees it when back"
         }
         model.current = t
-    case .newEmpty, .new, .newLater:
+    case .newEmpty, .new, .newLater, .newTo, .newSent:
         model.mode = .compose
         model.shown = .compose
-        model.newTitle = state == .newEmpty ? "" : "Call the plumber"
+        model.contacts = [
+            ContactRow(id: "1", name: "Michal Novak", hasMac: true, lastSeen: now.addingTimeInterval(-40), keys: []),
+            ContactRow(id: "3", name: "Viki", hasMac: false, lastSeen: nil, keys: []),
+        ]
+        if state == .newTo || state == .newSent { model.newTo = "1" }
+        if state == .newSent { model.composeNote = "Sent to Michal." }
+        model.newTitle = state == .newEmpty || state == .newSent ? "" : state == .newTo ? "Are you coming to lunch?" : "Call the plumber"
         model.newUrgency = state == .newLater ? .orange : .green
         model.later = state == .newLater
         model.laterDate = at(days: 1, 9, 30)

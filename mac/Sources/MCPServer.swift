@@ -333,29 +333,51 @@ enum MCPTools {
     }
 
     static func send(_ p: PingArgs, to t: Target, me: Me, client: String?, token: String, api: DeviceAPI) async -> [String: Any] {
-        guard t.hasMac else {
-            return failure("\(t.name) has no Mac app, so they cannot be pinged. They can still ping you from the web.")
+        switch await deliver(text: p.text, urgency: p.urgency, forAgent: p.forAgent, dueAt: nil, fromAgent: Net.agentName(client),
+                             to: t, me: me, token: token, api: api) {
+        case .success(let ref):
+            let who = t.isMe ? "your own Mac" : safeName(t.name)
+            let waits = t.isMe || t.online ? "" : " \(t.name) is offline now; it waits on the server up to 7 days."
+            return text("Pinged \(who) (\(p.urgency)\(p.forAgent ? ", for their agent" : "")). id: \(ref)\(waits) "
+                + "Check it later with status(id) or reply(id).")
+        case .failure(let f):
+            switch f {
+            case .noMac: return failure("\(t.name) has no Mac app, so they cannot be pinged. They can still ping you from the web.")
+            case .seal(let e): return failure("Could not encrypt the ping (\(e)).")
+            case .rateLimited: return failure("Limit reached: at most 30 pings per hour to one person. Wait before pinging again.")
+            case .notContact: return failure("\(t.name) is not your contact any more.")
+            case .api(let e): return failure(apiError(e))
+            case .unstable: return failure("Their devices keep changing. Try again in a minute.")
+            }
         }
+    }
+
+    enum SendFailure: Error, Equatable {
+        case noMac, rateLimited, notContact, unstable
+        case seal(String)
+        case api(ApiError)
+    }
+
+    /// Seals one ping for the target's Macs (and a title copy for the sender's devices) and sends it.
+    /// The agent tool and the island both send through here; a person's ping has no `fromAgent`.
+    static func deliver(text: String, urgency: String, forAgent: Bool, dueAt: Double?, fromAgent: String?,
+                        to t: Target, me: Me, token: String, api: DeviceAPI) async -> Result<String, SendFailure> {
+        guard t.hasMac else { return .failure(.noMac) }
         let ref = Seal.newRef()
         var recipient = t.devices
         var mine = me.devices
         for attempt in 0..<2 {
             let sealed: (envelopes: [Seal.Envelope], titleEnvelopes: [Seal.Envelope])
             do {
-                sealed = try Net.sealPing(p.text, ref: ref, from: me.userId, to: t.userId, recipient: recipient, mine: mine)
+                sealed = try Net.sealPing(text, ref: ref, from: me.userId, to: t.userId, recipient: recipient, mine: mine)
             } catch {
-                return failure("Could not encrypt the ping (\(error)).")
+                return .failure(.seal("\(error)"))
             }
-            let ping = DeviceAPI.Ping(ref: ref, to: t.userId, forAgent: p.forAgent, urgency: p.urgency,
-                                      fromAgent: Net.agentName(client), envelopes: sealed.envelopes,
+            let ping = DeviceAPI.Ping(ref: ref, to: t.userId, forAgent: forAgent, urgency: urgency, dueAt: dueAt,
+                                      fromAgent: fromAgent, envelopes: sealed.envelopes,
                                       titleEnvelopes: sealed.titleEnvelopes)
-            guard let r = try? await api.send(token: token, ping) else { return failure(apiError(.offline)) }
-            if (200..<300).contains(r.status) {
-                let who = t.isMe ? "your own Mac" : safeName(t.name)
-                let waits = t.isMe || t.online ? "" : " \(t.name) is offline now; it waits on the server up to 7 days."
-                return text("Pinged \(who) (\(p.urgency)\(p.forAgent ? ", for their agent" : "")). id: \(ref)\(waits) "
-                    + "Check it later with status(id) or reply(id).")
-            }
+            guard let r = try? await api.send(token: token, ping) else { return .failure(.api(.offline)) }
+            if (200..<300).contains(r.status) { return .success(ref) }
             if r.error == "stale-devices", attempt == 0 {
                 // Their Macs or yours changed since the list was read: seal again, same ref.
                 let fresh = r.staleDevices
@@ -364,13 +386,13 @@ enum MCPTools {
                 continue
             }
             switch r.error {
-            case "rate-limited": return failure("Limit reached: at most 30 pings per hour to one person. Wait before pinging again.")
-            case "no-device": return failure("\(t.name) has no Mac app, so they cannot be pinged.")
-            case "not-contact": return failure("\(t.name) is not your contact any more.")
-            default: return failure(apiError(r.failure))
+            case "rate-limited": return .failure(.rateLimited)
+            case "no-device": return .failure(.noMac)
+            case "not-contact": return .failure(.notContact)
+            default: return .failure(.api(r.failure))
             }
         }
-        return failure("Their devices keep changing. Try again in a minute.")
+        return .failure(.unstable)
     }
 
     // MARK: Text for the agent

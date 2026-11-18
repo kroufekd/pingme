@@ -279,7 +279,8 @@ final class IslandController {
         case .waiting: model.waitingRows = store.waiting()
         case .people: loadPeople()
         case .pair: model.pair = pairing.state
-        case .compose, .closed: break
+        case .compose: refreshPingable()
+        case .closed: break
         }
         if model.shown == .people && mode != .people { forgetKey() }
         if model.shown != mode { model.hoverRow = nil }
@@ -462,9 +463,71 @@ final class IslandController {
         onChange?()
     }
 
+    /// Contacts for the compose "To" menu: the last list right away, a fresh one when it is old.
+    private func refreshPingable() {
+        if !model.composeBusy { model.composeNote = "" }
+        guard paired else { model.newTo = nil; return }
+        if let c = sync.contacts { model.contacts = ContactRow.list(c) }
+        guard Date().timeIntervalSince(sync.contactsAt) > 120 else { return }
+        Task { @MainActor [weak self] in
+            guard let self, case .success(let c) = await self.sync.loadContacts() else { return }
+            self.model.contacts = ContactRow.list(c)
+            if let to = self.model.newTo, !self.model.contacts.contains(where: { $0.id == to && $0.hasMac }) { self.model.newTo = nil }
+        }
+    }
+
+    /// The compose text goes to a contact's Mac instead of this one. The text stays until it went.
+    private func sendPing(to userId: String, text: String, due: Date?) {
+        guard !model.composeBusy else { return }
+        let first = Fmt.firstName(model.contacts.first { $0.id == userId }?.name ?? "them")
+        model.composeBusy = true
+        model.composeNote = "Sending to \(first)..."
+        let urgency = model.newUrgency
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let r = await self.sync.ping(to: userId, text: text, urgency: urgency, dueAt: due)
+            self.model.composeBusy = false
+            switch r {
+            case .success(let sent):
+                let online = sent.target.online
+                self.model.composeNote = due != nil ? "Sent. \(first) sees it at the time you picked."
+                    : online ? "Sent to \(first)." : "Sent. \(first) sees it when their Mac is back."
+                self.model.newTitle = ""
+                self.model.newUrgency = .green
+                self.model.later = false
+                // The next new thing is a note to self again, unless they pick someone.
+                self.model.newTo = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+                    guard let self, self.target == .compose, self.model.newTitle.isEmpty, !self.model.composeBusy else { return }
+                    self.model.composeNote = ""
+                    self.closeTool()
+                }
+            case .failure(let f):
+                self.model.composeNote = Self.pingProblem(f, name: first)
+            }
+        }
+    }
+
+    static func pingProblem(_ f: MCPTools.SendFailure, name: String) -> String {
+        switch f {
+        case .noMac: return "\(name) has no Mac app yet, so the ping cannot reach them."
+        case .rateLimited: return "That is 30 pings to \(name) this hour. Try again later."
+        case .notContact: return "\(name) is not your contact any more."
+        case .unstable: return "\(name)'s Macs keep changing. Try again in a minute."
+        case .seal: return "Could not encrypt it. Nothing was sent."
+        case .api(.offline): return "No connection. Nothing was sent; try again."
+        case .api(.unauthorized): return "This Mac is not connected any more. Connect it again."
+        case .api(.server): return "The server refused it. Nothing was sent."
+        }
+    }
+
     private func add() {
         let title = model.newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
+        if let to = model.newTo {
+            sendPing(to: to, text: title, due: model.later ? model.laterDate : nil)
+            return
+        }
         let due = model.later ? model.laterDate : Date()
         store.add(title: title, dueAt: due, urgency: model.newUrgency)
         model.newTitle = ""

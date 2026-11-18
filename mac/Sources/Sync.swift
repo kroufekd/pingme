@@ -24,7 +24,7 @@ final class SyncEngine {
     /// Every fresh contact list, wherever it was loaded (People, sending, the periodic check).
     var onContacts: ((ContactsReply) -> Void)?
     private(set) var contacts: ContactsReply?
-    private var contactsAt = Date.distantPast
+    private(set) var contactsAt = Date.distantPast
     private var typingRef: String?
     private var typingSentAt = Date.distantPast
     var onSynced: (() -> Void)?
@@ -203,6 +203,23 @@ final class SyncEngine {
             break
         }
         return r
+    }
+
+    /// A ping typed on the island to a contact: sealed on this Mac like an agent's, sent as the person.
+    func ping(to userId: String, text: String, urgency: Urgency, dueAt: Date?) async
+        -> Result<(ref: String, target: MCPTools.Target), MCPTools.SendFailure> {
+        guard let token = identity?.token else { return .failure(.api(.unauthorized)) }
+        let c: ContactsReply
+        switch await loadContacts() {
+        case .success(let x): c = x
+        case .failure(let e): return .failure(.api(e))
+        }
+        guard case .success(let t) = MCPTools.resolve(userId, in: c), !t.isMe else { return .failure(.notContact) }
+        let due = dueAt.map(\.ms).flatMap { $0 > Date().ms + 30_000 ? $0 : nil }
+        let r = await MCPTools.deliver(text: text, urgency: urgency.rawValue, forAgent: false, dueAt: due, fromAgent: nil,
+                                        to: t, me: c.me, token: token, api: api)
+        if case .failure(.api(.unauthorized)) = r { unauthorized(token) }
+        return r.map { ($0, t) }
     }
 
     func invites() async -> Result<[Invite], ApiError> {
