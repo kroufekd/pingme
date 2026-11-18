@@ -148,6 +148,7 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             t.reply = "Back in 5 minutes, finishing an email"
             t.touchedAt = now.ms
             model.sentNote = "Back in 5 minutes, finishing an email"
+            model.replyDelivery = "Sent, Viki sees it when back"
         }
         model.current = t
     case .newEmpty, .new, .newLater:

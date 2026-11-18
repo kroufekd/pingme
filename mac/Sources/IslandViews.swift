@@ -94,6 +94,8 @@ final class IslandModel: ObservableObject {
     @Published var replyText = ""
     @Published var chosenChip: String?
     @Published var sentNote = ""
+    /// Where the reply is: "Sending", "Sent", or that the sender is offline. Empty for agent sessions.
+    @Published var replyDelivery = ""
     // Idle
     @Published var earsCount = 0
     @Published var earsUrgency: Urgency = .green
@@ -800,13 +802,20 @@ struct TaskCard: View {
         HStack(spacing: 6) {
             Icon(name: "reply", size: 14, color: .white).opacity(0.7)
             Text(model.sentNote).lineLimit(1).truncationMode(.tail)
+            if !model.replyDelivery.isEmpty {
+                Text(model.replyDelivery)
+                    .foregroundStyle(Ink.on3)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
         }
         .frame(height: 18.125)
         .font(Geist.font(12.5))
         .foregroundStyle(Ink.on2)
         .padding(.top, 10)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("You replied: \(model.sentNote)")
+        .accessibilityLabel("You replied: \(model.sentNote). \(model.replyDelivery)")
     }
 
     /// Three chips and a field. Typing moves the chips aside and brings the arrow.

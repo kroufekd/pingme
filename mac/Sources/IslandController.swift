@@ -127,6 +127,7 @@ final class IslandController {
 
     func tick(now: Date = Date()) {
         place()
+        updateReplyDelivery()
         var changed = false
         let due = store.due(at: now)
         let dueIds = Set(due.map(\.id))
@@ -204,6 +205,24 @@ final class IslandController {
         }
         guard let top = due.first else { return }
         if model.current?.id != top.id { setCurrent(top) } else if model.current != top { model.current = top }
+    }
+
+    /// The reply on the current task: still in the outbox, or taken by the server. The sender sees it on
+    /// their web page or Mac, so an offline sender is said, not hidden behind "Sent".
+    private func updateReplyDelivery() {
+        guard let t = model.current, t.reply != nil, let ref = t.taskRef, !t.isAgentSession else {
+            if !model.replyDelivery.isEmpty { model.replyDelivery = "" }
+            return
+        }
+        let text: String
+        if store.outbox.contains(where: { $0.isReply && $0.taskRef == ref }) {
+            text = store.syncError == nil ? "Sending" : "Waiting for the connection"
+        } else if let c = sync.contacts?.contacts.first(where: { $0.userId == t.fromUserId }), !c.online {
+            text = "Sent, \(Fmt.firstName(c.name)) sees it when back"
+        } else {
+            text = "Sent"
+        }
+        if model.replyDelivery != text { model.replyDelivery = text }
     }
 
     private func setCurrent(_ t: TodoTask) {

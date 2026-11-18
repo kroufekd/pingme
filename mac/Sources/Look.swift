@@ -139,6 +139,9 @@ struct Icon: View {
 // MARK: - English formatting (en_GB: 24-hour clock, day before month)
 
 enum Fmt {
+    /// "Michal" from "Michal Novák".
+    static func firstName(_ name: String) -> String { name.split(separator: " ").first.map(String.init) ?? name }
+
     static func clock(_ d: Date) -> String {
         let c = Calendar.current.dateComponents([.hour, .minute], from: d)
         return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
