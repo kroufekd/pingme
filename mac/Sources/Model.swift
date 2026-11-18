@@ -126,6 +126,7 @@ struct TodoTask: Codable, Identifiable, Equatable {
             switch source {
             case "web": return createdByName
             case "followup": return "Next step"
+            case "network": return "pingme"
             case "agent": return createdByName
             default: return "Reminder"
             }
@@ -430,6 +431,17 @@ final class TaskStore: ObservableObject {
             source: "mac", createdByName: "Mac", doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
             followUpTitle: nil, followUpMinutes: nil, followsFrom: nil,
             repeat: Recurrence.valid(rule), urgency: urgency.rawValue))
+        commit()
+    }
+
+    /// A note from the app itself ("Michal joined pingme"). Local only: no taskRef, so nothing is sent.
+    func notice(id: String, title: String) {
+        guard !pending.contains(where: { $0.id == id }) else { return }
+        let now = Date().ms
+        pending.append(TodoTask(
+            _id: id, title: String(title.prefix(kTitleMax)), dueAt: now, createdAt: now,
+            source: "network", createdByName: "pingme", doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
+            followUpTitle: nil, followUpMinutes: nil, followsFrom: nil, urgency: Urgency.green.rawValue))
         commit()
     }
 

@@ -70,6 +70,19 @@ extension Selftest {
         c.check("fingerprint of 32 x 0x09", Net.fingerprint(Data(repeating: 9, count: 32).base64EncodedString()) == "27716 66080 98022")
         c.check("fingerprint rejects a short key", Net.fingerprint("AAAA") == nil)
 
+        // Contact news: the first list is only learned, then joins and new Macs are told once.
+        func person(_ id: String, _ mac: Bool) -> Contact {
+            Contact(userId: id, name: id.capitalized, hasMac: mac, online: false, macLastSeen: nil, devices: [])
+        }
+        let before = [person("anna", false), person("ben", true)]
+        c.check("news: first list is only learned", ContactNews.diff(before, known: nil).isEmpty)
+        let known = ContactNews.known(from: before)
+        c.check("news: nothing new", ContactNews.diff(before, known: known).isEmpty)
+        let after = [person("anna", true), person("ben", true), person("cyril", false)]
+        c.check("news: Mac connected and someone joined",
+                ContactNews.diff(after, known: known).map(\.text) == ["Anna can get pings now.", "Cyril joined pingme."])
+        c.check("news: losing a Mac is not news", ContactNews.diff([person("ben", false)], known: known).isEmpty)
+
         // Pairing secrets.
         c.check("secretHash is hex sha256 of the string",
                 Net.secretHash("abc_DEF-123") == "5cd61b34b7c95370d31492c24a6772572089c480cf5c48fcc1b4484a5a90e0f3")

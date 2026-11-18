@@ -21,6 +21,8 @@ final class SyncEngine {
     /// Pings the server confirmed as acked, so a late feed value does not trigger another sync.
     private var confirmedAt: [String: Date] = [:]
     /// Last contact list: reply targets and the people state.
+    /// Every fresh contact list, wherever it was loaded (People, sending, the periodic check).
+    var onContacts: ((ContactsReply) -> Void)?
     private(set) var contacts: ContactsReply?
     private var contactsAt = Date.distantPast
     private var typingRef: String?
@@ -194,6 +196,7 @@ final class SyncEngine {
             guard identity?.token == token else { break }
             contacts = c
             contactsAt = Date()
+            onContacts?(c)
         case .failure(.unauthorized):
             unauthorized(token)
         case .failure:

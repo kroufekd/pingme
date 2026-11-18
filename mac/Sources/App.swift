@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var triage: Triage!
     private var statusItem: NSStatusItem!
     private var tickTimer: Timer?
+    /// The contact list is checked this often for people who joined or connected a Mac.
+    private var contactsCheckedAt = Date.distantPast
     private var lastStatus = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.updateStatusItem()
         }
         island.onRetryKey = { [weak self] in self?.retryKey() }
+        sync.onContacts = { [weak self] reply in self?.contactsLoaded(reply.contacts) }
         sync.onSynced = { [weak self] in self?.tick() }
         sync.onUnauthorized = { [weak self] in self?.forgetDevice(show: true) }
         pairing.onPaired = { [weak self] id in self?.usePaired(id) }
@@ -89,6 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Someone joined or connected a Mac since the last list: said once, as a quiet note on the island.
+    private func contactsLoaded(_ contacts: [Contact]) {
+        let news = ContactNews.diff(contacts, known: ContactNews.load())
+        ContactNews.save(ContactNews.known(from: contacts))
+        for n in news { store.notice(id: "news-\(n.userId)-\(n.kind.rawValue)-\(Int(Date().timeIntervalSince1970))", title: n.text) }
+        if !news.isEmpty { tick() }
+    }
+
     /// "Try again" on the island: macOS asks for the Keychain once more.
     private func retryKey() {
         switch IdentityStore.load() {
@@ -122,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sync.setIdentity(nil)
         feed.use(token: nil)
         try? IdentityStore.delete()
+        ContactNews.forget()
         island.paired = false
         store.syncError = nil
         updateStatusItem()
@@ -140,6 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func tick() {
+        if sync.paired, Date().timeIntervalSince(contactsCheckedAt) > 600 {
+            contactsCheckedAt = Date()
+            Task { _ = await sync.loadContacts() }
+        }
         _ = bridge.scan(into: store)
         triage.pump(store)
         island.tick()
