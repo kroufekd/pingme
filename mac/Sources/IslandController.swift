@@ -136,18 +136,17 @@ final class IslandController {
         let paused = Prefs.paused(at: now)
         model.privateText = Prefs.hideText || paused
         let dueIds = Set(due.map(\.id))
-        // Paused: only red arrives (with its text hidden). The rest is held back, not learned, so it
-        // arrives when the pause ends; what was already known before the pause does not come back.
-        let incoming = dueIds.subtracting(knownDue)
-        let held = paused ? Set(due.filter { $0.level != .red && incoming.contains($0.id) }.map(\.id)) : []
-        let fresh = incoming.subtracting(held)
+        // Paused: only red arrives (with its text hidden); the rest is held and arrives when it ends.
+        let split = Arrivals.split(due.map { Arrivals.Item(id: $0.id, red: $0.level == .red, touched: $0.touchedAt != nil) },
+                                   known: knownDue, dismissed: dismissed, paused: paused)
+        let fresh = split.fresh
         for id in knownDue.subtracting(dueIds) {
             nagFirst[id] = nil
             nagLast[id] = nil
             orangeNagged.remove(id)
             activeSeconds[id] = nil
         }
-        knownDue = dueIds.subtracting(held)
+        knownDue = split.known
         dismissed.formIntersection(dueIds)
         model.now = now
 

@@ -83,6 +83,22 @@ extension Selftest {
                 ContactNews.diff(after, known: known).map(\.text) == ["Anna can get pings now.", "Cyril joined pingme."])
         c.check("news: losing a Mac is not news", ContactNews.diff([person("ben", false)], known: known).isEmpty)
 
+        // Pause: red arrives, the rest is held until it ends, including a ping on the island at the start.
+        func due(_ id: String, red: Bool = false, touched: Bool = false) -> Arrivals.Item { Arrivals.Item(id: id, red: red, touched: touched) }
+        let during = Arrivals.split([due("g"), due("r", red: true)], known: [], dismissed: [], paused: true)
+        c.check("pause: red arrives, green is held", during.fresh == ["r"] && during.known == ["r"])
+        let resumed = Arrivals.split([due("g"), due("r", red: true)], known: during.known, dismissed: [], paused: false)
+        c.check("pause: the held one arrives when it ends", resumed.fresh == ["g"])
+        let onScreen = Arrivals.split([due("g")], known: ["g"], dismissed: [], paused: true)
+        c.check("pause: a ping on the island at the start is held", onScreen.known.isEmpty && onScreen.fresh.isEmpty)
+        c.check("pause: ...and comes back after",
+                Arrivals.split([due("g")], known: onScreen.known, dismissed: [], paused: false).fresh == ["g"])
+        let escd = Arrivals.split([due("g")], known: ["g"], dismissed: ["g"], paused: true)
+        c.check("pause: one put away with Esc stays quiet", escd.known == ["g"] &&
+                Arrivals.split([due("g")], known: escd.known, dismissed: ["g"], paused: false).fresh.isEmpty)
+        c.check("pause: one already touched stays known", Arrivals.split([due("t", touched: true)], known: ["t"], dismissed: [], paused: true).known == ["t"])
+        c.check("no pause: known stays known", Arrivals.split([due("g")], known: ["g"], dismissed: [], paused: false).fresh.isEmpty)
+
         // Replies to island pings: asked by ref; a reply is news once, then the ref leaves the list.
         func sentRow(_ ref: String, status: String, reply: Bool) -> SentRow {
             SentRow(ref: ref, fromUserId: "me", toUserId: "u_m", toName: "Michal Novak", status: status, statusAt: 1,

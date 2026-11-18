@@ -37,3 +37,23 @@ enum Prefs {
         return cal.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow) ?? tomorrow
     }
 }
+
+/// Which due pings arrive (pop) now and which count as already known, with or without a pause.
+enum Arrivals {
+    struct Item: Equatable {
+        var id: String
+        var red: Bool
+        /// The owner already acted on it (opened, replied, Esc).
+        var touched: Bool
+    }
+
+    /// Paused: every due ping but red that the owner has not touched or put away (Esc) is held:
+    /// not known, so it arrives when the pause ends. That includes one on the island when the pause
+    /// starts. Red arrives as always.
+    static func split(_ due: [Item], known: Set<String>, dismissed: Set<String>, paused: Bool)
+        -> (fresh: Set<String>, known: Set<String>) {
+        let ids = Set(due.map(\.id))
+        let held = paused ? Set(due.filter { !$0.red && !$0.touched && !dismissed.contains($0.id) }.map(\.id)) : []
+        return (ids.subtracting(known).subtracting(held), ids.subtracting(held))
+    }
+}
