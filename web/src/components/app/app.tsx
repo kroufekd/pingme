@@ -10,11 +10,13 @@ import { useNow } from '@/lib/time'
 import { ConnectAgent } from './connect'
 import { Icon } from './icon'
 import { NewMacNotice, useDeviceList } from './devices'
+import { ContactNews, NoMacNotice } from './notices'
 import { Onboarding, needsOnboarding } from './onboarding'
 import { PairPanel } from './pair'
 import { ME } from './people-picker'
 import type { Person } from './people-picker'
 import { CodePanel, EmailPanel } from './sign-in'
+import type { Welcome } from './sign-in'
 import { SentList, SentToggle, hasUnseenReply } from './task-list'
 import { TaskForm } from './task-form'
 import { useDevice, useSent } from './use-network'
@@ -23,6 +25,7 @@ type Phase = 'loading' | 'email' | 'code' | 'form'
 const NO_DEVICES: MyDevice[] = []
 
 const HINT_NO_CODE = "Couldn't send a code to this email."
+const HINT_DEAD_LINK = 'No invite for this email. Ask for a new link.'
 const HINT_NOT_MEMBER = 'This email has no invite.'
 const HINT_BAD_EMAIL = 'Check the email.'
 const HINT_BAD_CODE = "That code doesn't match."
@@ -67,10 +70,21 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const me: Me | undefined = useQuery(api.senders.me, mounted && isAuthenticated ? {} : 'skip')
   const check = useQuery(api.inviteLinks.check, mounted && invite && !isAuthenticated ? { token: invite } : 'skip')
 
-  // A dead link (invalid, expired, used): plain email sign-in, same screen.
+  // A dead link (invalid, expired, used): plain email sign-in, and a line that says why.
+  const [deadInvite, setDeadInvite] = useState(false)
   useEffect(() => {
-    if (check && !check.ok) forgetInvite()
+    if (check && !check.ok) {
+      setDeadInvite(true)
+      forgetInvite()
+    }
   }, [check, forgetInvite])
+  const welcome: Welcome | null = check?.ok
+    ? { kind: 'invited', inviter: check.inviterName }
+    : deadInvite
+      ? { kind: 'dead' }
+      : invite
+        ? null
+        : { kind: 'plain' }
 
   // Signed in: the code step is over.
   useEffect(() => {
@@ -168,8 +182,8 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
       setCodeHint(null)
       setOtpEmail(address)
     } catch {
-      // Not on the list, or the code could not be sent. Same quiet answer.
-      setEmailHint(HINT_NO_CODE)
+      // Not on the list, or the code could not be sent. Same quiet answer, unless the link was dead.
+      setEmailHint(deadInvite ? HINT_DEAD_LINK : HINT_NO_CODE)
       setBusy(false)
     }
   }
@@ -216,23 +230,27 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   return (
     <main className="screen">
       <h1 className="vh">pingme</h1>
-      {/* A Mac that joins the account can read every ping to it: never let that pass unseen. */}
-      {home && shown === 'form' && myDevices && <NewMacNotice devices={myDevices} thisId={device.deviceId} now={now} />}
-      {home && shown === 'form' && askAdd && invite && (
-        <ContactRequest
-          name={askAdd}
-          onAnswer={async (yes) => {
-            if (yes) {
-              const res = await claimInvite({ token: invite, addContact: true })
-              if (!res.ok && res.error !== 'bad-link') return
-            }
-            setAskAdd(null)
-            forgetInvite()
-          }}
-        />
-      )}
+      <div className="notices">
+        {/* A Mac that joins the account can read every ping to it: never let that pass unseen. */}
+        {home && shown === 'form' && myDevices && <NewMacNotice devices={myDevices} thisId={device.deviceId} now={now} />}
+        {home && shown === 'form' && askAdd && invite && (
+          <ContactRequest
+            name={askAdd}
+            onAnswer={async (yes) => {
+              if (yes) {
+                const res = await claimInvite({ token: invite, addContact: true })
+                if (!res.ok && res.error !== 'bad-link') return
+              }
+              setAskAdd(null)
+              forgetInvite()
+            }}
+          />
+        )}
+        {home && shown === 'form' && contactList && <ContactNews contacts={contactList} />}
+        {home && shown === 'form' && myDevices && !myDevices.some((d) => d.kind === 'mac') && <NoMacNotice onSetUp={() => setDrawer('agent')} />}
+      </div>
       <div className="stage" data-phase={shown} aria-busy={waiting || busy || undefined}>
-        <EmailPanel on={shown === 'email'} busy={busy || waiting} hint={emailHint} initialEmail={email} onSubmit={(a) => void sendCode(a)} />
+        <EmailPanel on={shown === 'email'} busy={busy || waiting} hint={emailHint} initialEmail={email} welcome={welcome} onSubmit={(a) => void sendCode(a)} />
         <CodePanel on={shown === 'code'} busy={busy || waiting} hint={codeHint} email={otpEmail ?? ''} onSubmit={verify} onBack={backToEmail} />
         {home ? (
           <TaskForm

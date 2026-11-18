@@ -26,6 +26,7 @@ const NOTES: Record<string, string> = {
   'rate-limited': 'Too many pings. Try again in a moment.',
 }
 const FAILED = "Didn't send. Try again."
+export const NO_APP_FOR = (name: string) => `${name.split(' ')[0]} hasn't set up the Mac app yet, so pings can't reach them.`
 const EMPTY = 'Write what you need.'
 const AGENT = 'Agent'
 const LATER = 'Send later'
@@ -95,7 +96,7 @@ export function TaskForm({
     }
     if (blocked || !chosen) {
       nudge()
-      if (chosen) setNote(NOTES['no-device'])
+      if (chosen) setNote(chosen.self ? NOTES['no-device'] : NO_APP_FOR(chosen.name))
       return
     }
     const now = Date.now()
@@ -141,7 +142,9 @@ export function TaskForm({
   // The same check as on send, shown as soon as the picked time is off.
   const when = laterOn ? checkLater(day, time, Date.now()) : null
   const laterBad = when && !when.ok ? NOTES[when.error] : null
-  const shownNote = note ?? laterBad
+  // A contact without the app is said right away, not after a send that cannot work.
+  const noApp = blocked && chosen && !chosen.self ? NO_APP_FOR(chosen.name) : null
+  const shownNote = note ?? laterBad ?? noApp
   const left = charsLeft(title.length, MAX_TITLE)
   const repeatWord = repeat ? REPEAT_OPTIONS.find((r) => r.value === repeat)?.label : undefined
   const cls = ['ps', 'pf', urgencyOf(urgency).cls, on ? 'on' : '', title.trim() ? 'has' : '', empty || (note && !laterBad) ? 'bad' : ''].filter(Boolean).join(' ')

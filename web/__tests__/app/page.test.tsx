@@ -137,7 +137,7 @@ describe('sign-in is a state of the same screen', () => {
     // The note is a polite live region that is always there; the hint is its text.
     const note = await screen.findByText("Couldn't send a code to this email.")
     expect(note).toHaveAttribute('aria-live', 'polite')
-    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-describedby', note.id)
+    expect(screen.getByLabelText('Email').getAttribute('aria-describedby')?.split(' ')).toContain(note.id)
     expect(screen.getByLabelText('Email')).toHaveValue('nekdo@example.com')
     expect(screen.getByLabelText('Email').closest('form')).toHaveClass('on')
   })
@@ -382,8 +382,11 @@ describe('who it goes to', () => {
     const go = screen.getByRole('button', { name: 'Send' })
     expect(go).toHaveAttribute('aria-disabled', 'true')
     expect(go).toHaveAttribute('title', 'No app yet')
+    // Said as soon as they are the one picked, not only after a send that cannot work.
+    const why = "Dominik hasn't set up the Mac app yet, so pings can't reach them."
+    expect(screen.getByText(why)).toBeInTheDocument()
     await sendTitle('Ahoj')
-    expect(await screen.findByText('No app yet.')).toBeInTheDocument()
+    expect(await screen.findByText(why)).toBeInTheDocument()
     expect(title).toHaveValue('Ahoj')
     await act(() => new Promise((r) => setTimeout(r, 10)))
     expect(mutation('messages:send')).not.toHaveBeenCalled()
@@ -834,5 +837,68 @@ describe('validation', () => {
     expect(screen.getByText("That time doesn't work.")).toBeInTheDocument()
     fireEvent.change(day, { target: { value: '' } })
     expect(screen.getByText('Pick a day and time.')).toBeInTheDocument()
+  })
+})
+
+describe('new people', () => {
+  it('an invite link says who invites and what pingme is', async () => {
+    window.history.replaceState(null, '', '/?i=tok7')
+    h.queries['inviteLinks:check'] = { ok: true, name: 'Franta', inviterName: 'Viki' }
+    render(<App />)
+    expect(await screen.findByText('Viki invited you to pingme.')).toBeInTheDocument()
+    expect(screen.getByText(/right at the top of the Mac screen/)).toBeInTheDocument()
+  })
+
+  it('a dead invite link says so instead of doing nothing', async () => {
+    window.history.replaceState(null, '', '/?i=old')
+    h.queries['inviteLinks:check'] = { ok: false }
+    h.signIn.mockRejectedValueOnce(new Error('NOT_INVITED'))
+    render(<App />)
+    expect(await screen.findByText('This invite link no longer works. Ask whoever sent it for a new one.')).toBeInTheDocument()
+    expect(localStorage.getItem('pingme.invite')).toBeNull()
+    await typeEmail('franta@example.com')
+    expect(await screen.findByText('No invite for this email. Ask for a new link.')).toBeInTheDocument()
+  })
+
+  it('without a Mac on the account: says pings cannot reach you, and Set up opens the agent panel', async () => {
+    member([], [dominik()], contactsView(K.me, [dominik()]))
+    render(<App />)
+    const notice = await screen.findByText("Pings can't reach you yet.")
+    const box = notice.closest('.dv-new') as HTMLElement
+    fireEvent.click(within(box).getByRole('button', { name: 'Set up the Mac' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Connect your agent/ })).toHaveAttribute('aria-expanded', 'true'))
+    fireEvent.click(within(box).getByRole('button', { name: 'Later' }))
+    await waitFor(() => expect(screen.queryByText("Pings can't reach you yet.")).toBeNull())
+  })
+
+  it('a Mac on the account: no such notice', async () => {
+    member()
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Ping' })
+    expect(screen.queryByText("Pings can't reach you yet.")).toBeNull()
+  })
+
+  it('tells once that someone joined, and later that they can get pings', async () => {
+    const jana = contact({ userId: 'u-jana', name: 'Jana' })
+    // This browser has seen Dominik before; Jana is new.
+    localStorage.setItem('pingme.contacts-known', JSON.stringify({ people: { [DOMINIK]: true } }))
+    member([], [dominik(), jana])
+    const view = render(<App />)
+    const joined = await screen.findByText('Jana joined pingme.')
+    fireEvent.click(within(joined.closest('.dv-new') as HTMLElement).getByRole('button', { name: 'OK' }))
+    await waitFor(() => expect(screen.queryByText('Jana joined pingme.')).toBeNull())
+    view.unmount()
+
+    member([], [dominik(), contact({ userId: 'u-jana', name: 'Jana' }, K.vikiMac)])
+    render(<App />)
+    expect(await screen.findByText('Jana can get pings now.')).toBeInTheDocument()
+  })
+
+  it('the first visit only learns the list', async () => {
+    member()
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Ping' })
+    expect(screen.queryByText(/joined pingme/)).toBeNull()
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('pingme.contacts-known') ?? '{}').people).toEqual({ [DOMINIK]: true }))
   })
 })

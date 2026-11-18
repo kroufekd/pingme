@@ -24,11 +24,36 @@ function GoButton({ busy, label }: { busy: boolean; label: string }) {
   )
 }
 
+export const INVITED = (who?: string) => (who ? `${who} invited you to pingme.` : "You're invited to pingme.")
+export const ABOUT = 'Short pings between people and their AI agents, right at the top of the Mac screen. End-to-end encrypted.'
+export const DEAD_LINK = 'This invite link no longer works. Ask whoever sent it for a new one.'
+export const INVITE_ONLY = 'pingme is invite only.'
+export const ALREADY_IN = 'Already in? Sign in with your email.'
+
+/** What the email step says above the field: who invites, or why the link did nothing. */
+export type Welcome = { kind: 'invited'; inviter?: string } | { kind: 'dead' } | { kind: 'plain' }
+
+function Lead({ welcome }: { welcome: Welcome }) {
+  if (welcome.kind === 'invited') {
+    return (
+      <>
+        <b>{INVITED(welcome.inviter)}</b> {ABOUT}
+      </>
+    )
+  }
+  return (
+    <>
+      <b>{welcome.kind === 'dead' ? DEAD_LINK : INVITE_ONLY}</b> {ALREADY_IN}
+    </>
+  )
+}
+
 export function EmailPanel({
   on,
   busy,
   hint,
   initialEmail,
+  welcome,
   onSubmit,
 }: {
   on: boolean
@@ -36,6 +61,8 @@ export function EmailPanel({
   /** What the server said about the last address (no invite, code not sent). */
   hint: string | null
   initialEmail: string
+  /** Null while an invite link is being checked: nothing shows rather than the wrong line. */
+  welcome?: Welcome | null
   onSubmit: (email: string) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -88,6 +115,10 @@ export function EmailPanel({
   const cls = ['ps', on ? 'on' : '', email.trim() ? 'has' : '', note ? 'bad' : ''].filter(Boolean).join(' ')
   return (
     <form className={cls} inert={!on} aria-hidden={!on || undefined} aria-label="Sign in with email" onSubmit={submit} noValidate>
+      {/* Above the error line, out of the flow: it can arrive late without moving the field. */}
+      <p className={welcome ? 'ps-lead on' : 'ps-lead'} id="u-mail-lead">
+        {welcome && <Lead welcome={welcome} />}
+      </p>
       <p className="ps-note" id="u-mail-hint" role="status" aria-live="polite">
         {note}
       </p>
@@ -112,7 +143,7 @@ export function EmailPanel({
           }}
           readOnly={busy}
           aria-invalid={error ? true : undefined}
-          aria-describedby="u-mail-hint"
+          aria-describedby="u-mail-lead u-mail-hint"
         />
         <GoButton busy={busy} label="Send code" />
       </div>

@@ -148,7 +148,7 @@ describe('devices on the account', () => {
     const notice = await screen.findByRole('status', { name: 'New Mac' })
     expect(notice).toHaveTextContent('MacBook Pro')
     // First in reading order, above the form.
-    expect(view.container.querySelector('main > .dv-new')).toBe(notice)
+    expect(view.container.querySelector('main > .notices > .dv-new')).toBe(notice)
 
     fireEvent.click(within(notice).getByRole('button', { name: "It's mine" }))
     await waitFor(() => expect(screen.queryByRole('status', { name: 'New Mac' })).toBeNull())

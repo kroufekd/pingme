@@ -425,6 +425,32 @@ body {
     animation: u-note 0.45s var(--spring);
   }
 
+  /* Who invites, or why a link did nothing: above the error line, in the white space. */
+  .ps-lead {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 52px);
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--ink-2);
+    text-wrap: pretty;
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity 0.4s var(--ease),
+      transform 0.5s var(--spring);
+  }
+  .ps-lead.on {
+    opacity: 1;
+    transform: none;
+  }
+  .ps-lead b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
   .ps-note.short {
     right: 4ch;
   }
@@ -2645,11 +2671,35 @@ body vite-error-overlay {
   }
 
   /* ---- "New Mac": above the form, in the empty top of the screen, so nothing moves ---- */
-  .dv-new {
+  /* Notices stack at the top of the page, out of the flow: the form never moves for them. */
+  .notices {
     position: absolute;
+    z-index: 3;
     top: max(16px, env(safe-area-inset-top));
     left: max(24px, env(safe-area-inset-left));
     right: max(24px, env(safe-area-inset-right));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .notices:empty {
+    display: none;
+  }
+  /* The way in without an agent: one quiet line under the prompt, the command selectable. */
+  .cn-alt {
+    margin: 12px 2px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+  .cn-alt-c {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .dv-new {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -2682,6 +2732,10 @@ body vite-error-overlay {
   }
   .dv-new-a .chip.dv-rm.on {
     background: var(--r-ink);
+  }
+  .dv-new-a .chip.dv-go {
+    background: var(--ink);
+    color: var(--cream);
   }
 }
 /* ==== end network ==== */
