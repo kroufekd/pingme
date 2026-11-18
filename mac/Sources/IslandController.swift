@@ -130,7 +130,11 @@ final class IslandController {
         updateReplyDelivery()
         var changed = false
         let due = store.due(at: now)
-        let dueIds = Set(due.map(\.id))
+        // Paused: only red pops (with its text hidden); the rest waits and pops when the pause ends.
+        let paused = Prefs.paused(at: now)
+        model.privateText = Prefs.hideText || paused
+        let loud = paused ? due.filter { $0.level == .red } : due
+        let dueIds = Set(loud.map(\.id))
         let fresh = dueIds.subtracting(knownDue)
         for id in knownDue.subtracting(dueIds) {
             nagFirst[id] = nil
@@ -145,7 +149,7 @@ final class IslandController {
         // Arrivals: sound for Brzy and Hned, and the island grows unless a tool state is open.
         if !fresh.isEmpty {
             for id in fresh { nagFirst[id] = now; nagLast[id] = now }
-            let arrivals = due.filter { fresh.contains($0.id) }
+            let arrivals = loud.filter { fresh.contains($0.id) }
             if (arrivals.map(\.level).max() ?? .green) >= .orange { playSound() }
             if let first = arrivals.first { announce(first) }
             if target == .closed { open(.task, user: false) }
@@ -156,7 +160,7 @@ final class IslandController {
         }
 
         // Reminders until the owner clicks. Orange once after 2 min, red every minute.
-        for t in due where t.touchedAt == nil {
+        for t in loud where t.touchedAt == nil {
             guard let first = nagFirst[t.id] else { continue }
             if t.level == .orange, !orangeNagged.contains(t.id), now.timeIntervalSince(first) >= 120 {
                 orangeNagged.insert(t.id)

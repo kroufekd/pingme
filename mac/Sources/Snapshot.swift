@@ -19,7 +19,7 @@ enum SnapshotState: String, CaseIterable {
     // The network (phase 2).
     case peopleDetail = "people-detail", peopleInvited = "people-invited", peopleEmpty = "people-empty"
     case pair, pairing, pairFailed = "pair-failed", pairDone = "pair-done", keyLocked = "key-locked", keyStuck = "key-stuck"
-    case taskUnreadable = "task-unreadable", taskPlain = "task-plain"
+    case taskUnreadable = "task-unreadable", taskPlain = "task-plain", taskHidden = "task-hidden"
 
     /// Height of the desktop slice, as in the design (`--h`).
     var deskHeight: CGFloat {
@@ -114,7 +114,7 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.hover = true
         model.current = t
     case .taskGreen, .taskOrange, .taskRed, .taskAgent, .taskHover, .replyOpen, .replyTyping, .replySent, .taskOwnerHover,
-         .taskUnreadable, .taskPlain:
+         .taskUnreadable, .taskPlain, .taskHidden:
         var t: TodoTask
         switch state {
         case .taskGreen: t = sample("Call me when you have a minute", from: "Mom", kind: .person, urgency: .green, showAt: now)
@@ -139,6 +139,7 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.mode = .task
         model.shown = .task
         model.hover = state == .taskHover || state == .taskOwnerHover
+        model.privateText = state == .taskHidden
         if state == .replyOpen || state == .replyTyping { model.replyOpen = true }
         if state == .replyTyping {
             model.replyText = "Back in 5 minutes, finishing an email"

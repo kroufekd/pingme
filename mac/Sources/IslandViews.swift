@@ -94,6 +94,8 @@ final class IslandModel: ObservableObject {
     @Published var replyText = ""
     @Published var chosenChip: String?
     @Published var sentNote = ""
+    /// Ping text is hidden until the pointer is on the island (the setting, or anything shown during a pause).
+    @Published var privateText = false
     /// Where the reply is: "Sending", "Sent", or that the sender is offline. Empty for agent sessions.
     @Published var replyDelivery = ""
     // Idle
@@ -665,6 +667,8 @@ struct TaskCard: View {
     enum Spot: Hashable { case done, reply, open, snooze, chip(Int), send }
 
     private var reveal: Bool { model.hover || focus != nil }
+    /// Gray bars instead of the text until the pointer comes (Hide ping text, or a red ping while paused).
+    private var hidden: Bool { model.privateText && !reveal && !model.replyOpen }
     private static let titleWidth = kContentWidth - 12 - 32
 
     var body: some View {
@@ -688,7 +692,9 @@ struct TaskCard: View {
                         // The text can be selected, and a right click copies all of it.
                         .textSelection(.enabled)
                         .contextMenu { if task.unreadable != true { copyButton(task.title) } }
-                    if task.forAgent, let report = task.report, !report.isEmpty {
+                        .redacted(reason: hidden ? .placeholder : [])
+                        .accessibilityHint(hidden ? "Hidden until you point at the island" : "")
+                    if task.forAgent, let report = task.report, !report.isEmpty, !hidden {
                         Text(report)
                             .font(Geist.font(12.5))
                             .lineSpacing(2)
@@ -714,7 +720,7 @@ struct TaskCard: View {
                 replyStack
                     .transition(.opacity)
             } else {
-                if !model.sentNote.isEmpty { note }
+                if !model.sentNote.isEmpty && !hidden { note }
                 more
             }
         }

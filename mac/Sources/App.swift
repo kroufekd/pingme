@@ -231,11 +231,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let due = store.due().count
         let pending = store.pending.count
         let offline = store.syncError != nil
-        let state = "\(due)/\(pending)/\(offline)"
+        let paused = Prefs.paused()
+        let state = "\(due)/\(pending)/\(offline)/\(paused)"
         guard state != lastStatus else { return }
         lastStatus = state
         if offline && due == 0 {
             let image = NSImage(systemSymbolName: "icloud.slash", accessibilityDescription: "pingme offline")
+            image?.isTemplate = true
+            button.image = image
+        } else if paused && due == 0 {
+            let image = NSImage(systemSymbolName: "bell.slash", accessibilityDescription: "pingme paused")
             image?.isTemplate = true
             button.image = image
         } else {
@@ -264,6 +269,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             menu.addItem(item("Connect this Mac", #selector(openPair), key: ""))
         }
+        menu.addItem(.separator())
+        if let until = Prefs.pausedUntil {
+            let day = Calendar.current.isDateInToday(until) ? "" : "tomorrow "
+            let note = NSMenuItem(title: "Paused until \(day)\(Fmt.clock(until)), red still pops", action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            menu.addItem(note)
+            menu.addItem(item("Resume pings", #selector(resumePings), key: ""))
+        } else {
+            let pause = NSMenuItem(title: "Pause pings", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            sub.addItem(item("For 1 hour", #selector(pauseHour), key: ""))
+            sub.addItem(item("Until tomorrow 8:00", #selector(pauseTomorrow), key: ""))
+            pause.submenu = sub
+            menu.addItem(pause)
+        }
+        let hide = item("Hide ping text until I point at it", #selector(toggleHide), key: "")
+        hide.state = Prefs.hideText ? .on : .off
+        menu.addItem(hide)
         menu.addItem(.separator())
         if sync.paired { menu.addItem(item("Disconnect this Mac", #selector(unpair), key: "")) }
         menu.addItem(item("Quit pingme", #selector(quit), key: "q"))
@@ -305,6 +328,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             await sync.unpair()
             forgetDevice(show: false)
         }
+    }
+
+    @objc private func pauseHour() { pause(until: Date().addingTimeInterval(3600)) }
+    @objc private func pauseTomorrow() { pause(until: Prefs.tomorrowMorning()) }
+    @objc private func resumePings() { pause(until: nil) }
+
+    /// Local only: pings keep arriving and wait as "not shown yet"; the quiet ones pop when it ends.
+    private func pause(until: Date?) {
+        Prefs.pausedUntil = until
+        tick()
+    }
+
+    @objc private func toggleHide() {
+        Prefs.hideText.toggle()
+        tick()
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
