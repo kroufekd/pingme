@@ -2725,6 +2725,7 @@ body vite-error-overlay {
   }
   .pp-form {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
   .pp-l {
@@ -2737,6 +2738,7 @@ body vite-error-overlay {
   }
   .pp-in {
     flex: 1 1 auto;
+    width: 0;
     min-width: 0;
     background: var(--cream);
     font-size: 16px;
@@ -2818,9 +2820,18 @@ body vite-error-overlay {
     .dv-b-t {
       display: none;
     }
+    /* Three buttons in one row: the label never wraps, the two toggles get tighter. */
+    .cn-bar {
+      gap: 6px 8px;
+    }
     .cn-bar .cn-b:not(.dv-b) {
       flex: 0 1 auto;
       min-width: 0;
+      white-space: nowrap;
+    }
+    .cn-side .cn-b.dv-b {
+      gap: 5px;
+      padding: 0 7px;
     }
     .dv-row {
       grid-template-columns: 22px minmax(0, 1fr) auto 44px;
@@ -2832,6 +2843,12 @@ body vite-error-overlay {
     /* An email in the status column must not take the name's room. */
     .pp-until {
       max-width: 112px;
+    }
+  }
+  @media (max-width: 370px) {
+    /* The agent logos give way before the label does. */
+    .cn-bar .cn-faces {
+      display: none;
     }
   }
 
