@@ -617,9 +617,9 @@ describe("statuses from the Mac", () => {
     expect(await row()).toMatchObject({ status: "replied", reply: "Jdu na to", replyAt: T + 5000 })
     expect((await row())!.typingUntil).toBeUndefined()
 
-    // Done keeps the reply, lives 24 hours.
+    // Done keeps the reply, and the reply keeps the row a month.
     await macSync(t, { statuses: [{ taskRef: ref, status: "done", at: T + 6000 }] })
-    expect(await row()).toMatchObject({ status: "done", reply: "Jdu na to", expiresAt: T + 6000 + DAY })
+    expect(await row()).toMatchObject({ status: "done", reply: "Jdu na to", expiresAt: T + 5000 + 30 * DAY })
 
     // ackReply clears it.
     expect(await A.as.mutation(api.tasks.ackReply, { taskRef: ref })).toBe(true)

@@ -700,6 +700,7 @@ describe("encrypted pings between members", () => {
         createdAt: expect.any(Number),
         status: "replied",
         statusAt: T0 + 2000,
+        undelivered: false,
         snoozedUntil: null,
         typingUntil: null,
         title: { enc: titleEnvelopes[0].enc, ct: titleEnvelopes[0].ct },
@@ -722,11 +723,11 @@ describe("encrypted pings between members", () => {
     const everything = JSON.stringify([await C.as.query(api.contacts.list, {}), await C.as.query(api.messages.mine, {}), await sync(t, cMac.token)])
     for (const secret of [titleEnvelopes[0].ct, replyEnv[0].ct, envelopes[0].ct, ref]) expect(everything).not.toContain(secret)
 
-    // An older status from a retried outbox does not undo the reply; done lives 24 hours.
+    // An older status from a retried outbox does not undo the reply; the reply keeps a done row a month.
     await sync(t, dMac.token, { statuses: [{ ref, status: "seen", at: T0 + 1500 }] })
     expect((await statusRow())?.status).toBe("replied")
     await sync(t, dMac.token, { statuses: [{ ref, status: "done", at: T0 + 3000 }] })
-    expect(await statusRow()).toMatchObject({ status: "done", expiresAt: T0 + 3000 + DAY })
+    expect(await statusRow()).toMatchObject({ status: "done", expiresAt: T0 + 2000 + 30 * DAY })
 
     // ackReply drops only the browser's copy.
     expect(await V.as.mutation(api.messages.ackReply, { ref, deviceId: vWeb })).toBe(true)
@@ -858,6 +859,44 @@ describe("encrypted pings between members", () => {
     expect(await devJson(t, dMac.token, "POST", "/device/reply", { ref, at }, 400)).toEqual({ ok: false, error: "bad-request" })
     expect(await devJson(t, dMac.token, "POST", "/device/reply", { ref, at, envelopes: [] }, 400)).toEqual({ ok: false, error: "bad-envelope" })
     expect(await devJson(t, dMac.token, "POST", "/device/reply", { ref, at: Date.now() + 2 * HOUR, envelopes: seal([vWeb]) }, 400)).toEqual({ ok: false, error: "bad-time" })
+  })
+})
+
+describe("how long rows live", () => {
+  test("a ping due later lives from its due time, then shows as not delivered; a reply keeps a done row a month", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    const t = setup()
+    const { D, V, dMac, vWeb } = await network(t)
+    const now = Date.now()
+    const due = now + 20 * DAY
+    const ref = newRef()
+    const later = newRef()
+    await V.as.mutation(api.messages.send, { ref, to: D.userId, forAgent: false, urgency: "green", envelopes: seal([dMac.deviceId]), titleEnvelopes: seal([vWeb]) })
+    await V.as.mutation(api.messages.send, { ref: later, to: D.userId, forAgent: false, urgency: "green", dueAt: due, envelopes: seal([dMac.deviceId]), titleEnvelopes: seal([vWeb]) })
+    const get = (r: string) => t.run(async (ctx) => ({
+      message: await ctx.db.query("messages").withIndex("by_ref", (q) => q.eq("ref", r)).first(),
+      status: await ctx.db.query("taskStatus").withIndex("by_taskRef", (q) => q.eq("taskRef", r)).first(),
+    }))
+    const before = await get(later)
+    expect(before.message?.expiresAt).toBe(due + 7 * DAY)
+    expect(before.status?.expiresAt).toBe(due + 10 * DAY)
+
+    // Dominik's Mac stays off. A week after it was due, the sender sees "not delivered".
+    vi.setSystemTime(due + 7 * DAY + MINUTE)
+    let mine = await V.as.query(api.messages.mine, { deviceId: vWeb })
+    if (mine.status !== "member") throw new Error("V")
+    expect(mine.rows.find((r) => r.ref === later)).toMatchObject({ status: "queued", undelivered: true })
+
+    // The first ping got a reply and was then done: the row stays listed for a month after the reply.
+    vi.setSystemTime(now + HOUR)
+    await sync(t, dMac.token, { ack: [ref] })
+    expect(await devJson(t, dMac.token, "POST", "/device/reply", { ref, at: now + HOUR, envelopes: seal([vWeb]) })).toEqual({ ok: true })
+    await sync(t, dMac.token, { statuses: [{ ref, status: "done", at: now + HOUR + 1000 }] })
+    expect((await get(ref)).status?.expiresAt).toBe(now + HOUR + 30 * DAY)
+    vi.setSystemTime(now + 20 * DAY)
+    mine = await V.as.query(api.messages.mine, { deviceId: vWeb })
+    if (mine.status !== "member") throw new Error("V")
+    expect(mine.rows.find((r) => r.ref === ref)).toMatchObject({ status: "done", undelivered: false, replyAt: now + HOUR })
   })
 })
 

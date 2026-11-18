@@ -11,8 +11,11 @@ import {
   activeSenderForUser,
   isEmail,
   normalizeEmail,
+  MESSAGE_TTL,
+  REPLY_TTL,
   sha256Hex,
   statusExpiry,
+  undelivered,
 } from "./model"
 import type { ContactInfo, DeviceInfo, DeviceKind, DeviceStatus, EnvelopeIn, InboxItem, Repeat, SentRow, TaskState, Urgency } from "./validators"
 
@@ -20,7 +23,7 @@ import type { ContactInfo, DeviceInfo, DeviceKind, DeviceStatus, EnvelopeIn, Inb
 // The server only relays ciphertext. It checks who may talk to whom and which devices a
 // ciphertext is for, never what it says.
 
-export const MESSAGE_TTL = 7 * DAY
+export { MESSAGE_TTL }
 export const PAIR_TTL = 10 * MINUTE
 /** A contact is online when one of its Macs checked in this recently. Macs check in every 5 min. */
 export const ONLINE_TTL = 12 * MINUTE
@@ -440,7 +443,8 @@ export async function sendCore(
     dueAt,
     repeat,
     createdAt: now,
-    expiresAt: now + MESSAGE_TTL,
+    // Counted from when it is due: a ping set for next month still reaches a Mac that is off today.
+    expiresAt: Math.max(now, dueAt) + MESSAGE_TTL,
     envelopes,
     deliveredTo: [],
   })
@@ -450,7 +454,7 @@ export async function sendCore(
     taskRef: ref,
     status: "queued",
     at: now,
-    expiresAt: statusExpiry("queued", now),
+    expiresAt: statusExpiry("queued", now, { dueAt }),
     fromAgent,
     forAgent: input.forAgent,
     urgency,
@@ -633,7 +637,7 @@ export async function applyDeviceStatus(ctx: MutationCtx, userId: Id<"users">, s
     status: s.status,
     at: s.at,
     snoozedUntil: snoozed ? s.snoozedUntil : undefined,
-    expiresAt: statusExpiry(s.status, s.at),
+    expiresAt: statusExpiry(s.status, s.at, { dueAt: row.dueAt, replyAt: row.replyAt }),
     ...(s.status === "done" ? { typingUntil: undefined } : {}),
   })
 }
@@ -656,8 +660,13 @@ export async function replyCore(
   // The reply is always kept; the status moves only forward (an older retry must not undo "done").
   const advance = row.status === "queued" || input.at >= row.at
   const status: Partial<Doc<"taskStatus">> = advance
-    ? { status: "replied", at: input.at, snoozedUntil: undefined, expiresAt: statusExpiry("replied", input.at) }
+    ? { status: "replied", at: input.at, snoozedUntil: undefined }
     : {}
+  // A newer reply keeps the row a month, also when an older retry does not move the status.
+  status.expiresAt = statusExpiry(advance ? "replied" : row.status, advance ? input.at : row.at, {
+    dueAt: row.dueAt,
+    replyAt: input.at,
+  })
 
   if (row.unencrypted) {
     const text = (input.text ?? "").trim()
@@ -706,7 +715,9 @@ export async function sentRows(
   const out: SentRow[] = []
   for (const st of rows) {
     if (!st.toUserId) continue
-    if (!refs && st.status === "done" && st.at < now - DONE_TTL) continue
+    // Done rows leave the list after a day, unless they hold a reply the sender may not have read.
+    const freshReply = st.replyAt !== undefined && st.replyAt > now - REPLY_TTL
+    if (!refs && st.status === "done" && st.at < now - DONE_TTL && !freshReply) continue
     const title = deviceId ? st.titleEnvelopes?.find((e) => e.deviceId === deviceId) : undefined
     const reply = deviceId ? st.replyEnvelopes?.find((e) => e.deviceId === deviceId) : undefined
     out.push({
@@ -722,6 +733,7 @@ export async function sentRows(
       createdAt: st.createdAt ?? st._creationTime,
       status: st.status,
       statusAt: st.at,
+      undelivered: undelivered(st.status, st.createdAt ?? st._creationTime, st.dueAt ?? st.at, now),
       snoozedUntil: st.status === "snoozed" ? (st.snoozedUntil ?? null) : null,
       typingUntil: st.typingUntil ?? null,
       title: title ? { enc: title.enc, ct: title.ct } : null,

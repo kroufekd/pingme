@@ -166,6 +166,8 @@ export const sentRow = v.object({
   createdAt: v.number(),
   status: taskState,
   statusAt: v.number(),
+  /** Queued past its delivery window: the recipient's Macs will not get it. */
+  undelivered: v.boolean(),
   snoozedUntil: v.union(v.number(), v.null()),
   typingUntil: v.union(v.number(), v.null()),
   title: v.union(sealed, v.null()),
