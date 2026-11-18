@@ -104,14 +104,20 @@ final class AgentBridge {
         <last_answer>
         \(fence(last, "last_answer"))
         </last_answer>
-        Write them one short sentence in English (at most 80 characters), addressed to them as "you". They should see right away how it went:
-        what is done and with what result, or what they need to do. If it asks them something, write that question.
-        Do not use the words session, user, agent or Claude. No markdown, no quotes, no long dashes.
+        <task> is what the person asked for. <last_answer> is how it ended. Write them one short sentence in English
+        (at most 80 characters) that tells them how it went, so they need not open it:
+        - Start with the outcome: what is done, what was found, with the concrete thing (a name, a number, a link host).
+        - Ask them to do something only when <last_answer> clearly waits on them: a question to them, a login, an approval,
+          a decision. Then write that question or request.
+        - Never turn <task> into a to-do for them. They wrote it; it is what they asked for, not what they must do.
+        - If the last answer is a plan or a next step the work will take itself, say what was found, not the plan.
+        English even when the data is in another language. Do not use the words session, user, agent or Claude.
+        No markdown, no quotes, no long dashes.
         Tone examples (take the content only from the data above):
         The new site is live at pingme.macaly.app, the form is in the middle
-        Sign in on the panel with Google, then I'll run QA
-        Merge now, or wait for Tom's review?
+        Both test runs failed on a missing env key, nothing changed yet
         The build fails on types in checkout, the fix is small
+        Merge now, or wait for Tom's review?
         Print only that one sentence.
         """
     }
