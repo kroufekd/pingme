@@ -5,7 +5,7 @@
 import Foundation
 
 enum ReplyWatch {
-    /// ref -> when it was sent (ms).
+    /// ref -> when it shows on their Mac (ms): now, or the time picked under Later.
     typealias Watch = [String: Double]
 
     struct News: Equatable {
@@ -14,7 +14,7 @@ enum ReplyWatch {
         var text: String
     }
 
-    /// Stop asking after this: the ping itself is gone from the server by then.
+    /// Stop asking this long after it showed: an undelivered ping is gone from the server after 7 days.
     static let maxAge: Double = 8 * 86_400_000
 
     /// One look at the server's rows for the watched refs. A reply becomes news and leaves the list;

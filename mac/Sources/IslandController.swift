@@ -67,6 +67,9 @@ final class IslandController {
     private var knownDue = Set<String>()
     /// Due tasks the owner put away with Esc. A new arrival still opens the island.
     private var dismissed = Set<String>()
+    /// The task card is open because the owner opened it (a click), not because something popped.
+    /// While paused, only then does it show more than red.
+    private var userOpenedTask = false
     private var nagFirst: [String: Date] = [:]
     private var nagLast: [String: Date] = [:]
     private var orangeNagged = Set<String>()
@@ -130,37 +133,41 @@ final class IslandController {
         updateReplyDelivery()
         var changed = false
         let due = store.due(at: now)
-        // Paused: only red pops (with its text hidden); the rest waits and pops when the pause ends.
         let paused = Prefs.paused(at: now)
         model.privateText = Prefs.hideText || paused
-        let loud = paused ? due.filter { $0.level == .red } : due
-        let dueIds = Set(loud.map(\.id))
-        let fresh = dueIds.subtracting(knownDue)
+        let dueIds = Set(due.map(\.id))
+        // Paused: only red arrives (with its text hidden). The rest is held back, not learned, so it
+        // arrives when the pause ends; what was already known before the pause does not come back.
+        let incoming = dueIds.subtracting(knownDue)
+        let held = paused ? Set(due.filter { $0.level != .red && incoming.contains($0.id) }.map(\.id)) : []
+        let fresh = incoming.subtracting(held)
         for id in knownDue.subtracting(dueIds) {
             nagFirst[id] = nil
             nagLast[id] = nil
             orangeNagged.remove(id)
             activeSeconds[id] = nil
         }
-        knownDue = dueIds
+        knownDue = dueIds.subtracting(held)
         dismissed.formIntersection(dueIds)
         model.now = now
 
         // Arrivals: sound for Brzy and Hned, and the island grows unless a tool state is open.
         if !fresh.isEmpty {
             for id in fresh { nagFirst[id] = now; nagLast[id] = now }
-            let arrivals = loud.filter { fresh.contains($0.id) }
+            let arrivals = due.filter { fresh.contains($0.id) }
             if (arrivals.map(\.level).max() ?? .green) >= .orange { playSound() }
             if let first = arrivals.first { announce(first) }
             if target == .closed { open(.task, user: false) }
         }
 
         if target == .task {
-            if due.isEmpty { close() } else { pickCurrent(due) }
+            // While paused the island keeps to red, unless the owner opened it to look.
+            let shown = paused && !userOpenedTask ? due.filter { $0.level == .red } : due
+            if shown.isEmpty { close() } else { pickCurrent(shown) }
         }
 
         // Reminders until the owner clicks. Orange once after 2 min, red every minute.
-        for t in loud where t.touchedAt == nil {
+        for t in due where t.touchedAt == nil && (!paused || t.level == .red) {
             guard let first = nagFirst[t.id] else { continue }
             if t.level == .orange, !orangeNagged.contains(t.id), now.timeIntervalSince(first) >= 120 {
                 orangeNagged.insert(t.id)
@@ -221,8 +228,9 @@ final class IslandController {
         let text: String
         if store.outbox.contains(where: { $0.isReply && $0.taskRef == ref }) {
             text = store.syncError == nil ? "Sending" : "Waiting for the connection"
-        } else if let c = sync.contacts?.contacts.first(where: { $0.userId == t.fromUserId }), !c.online {
-            text = "Sent, \(Fmt.firstName(c.name)) sees it when back"
+        } else if let c = sync.contacts?.contacts.first(where: { $0.userId == t.fromUserId }), c.hasMac, !c.online {
+            // Without a Mac they read it on the web, whenever they look: plain "Sent" says it.
+            text = "Sent, shows when \(Fmt.firstName(c.name))'s Mac is on"
         } else {
             text = "Sent"
         }
@@ -275,6 +283,7 @@ final class IslandController {
 
     func open(_ requested: IslandMode, user: Bool) {
         let mode: IslandMode = requested == .people && !paired ? .pair : requested
+        if mode == .task { userOpenedTask = user || (userOpenedTask && target == .task) }
         let p = panel ?? makePanel()
         panel = p
         place()
@@ -321,6 +330,7 @@ final class IslandController {
     /// Folds the island back into the notch.
     func close() {
         guard target != .closed else { return }
+        userOpenedTask = false
         if model.shown == .people { forgetKey() }
         frameGeneration += 1
         let g = frameGeneration
@@ -341,9 +351,11 @@ final class IslandController {
 
     /// Closing a tool state shows a due task if there is one.
     private func closeTool() {
-        if store.due().contains(where: { !dismissed.contains($0.id) }) {
+        let paused = Prefs.paused()
+        let due = store.due().filter { !paused || $0.level == .red }
+        if due.contains(where: { !dismissed.contains($0.id) }) {
             open(.task, user: false)
-            pickCurrent(store.due())
+            pickCurrent(due)
         } else {
             close()
         }
@@ -493,9 +505,11 @@ final class IslandController {
             self.model.composeBusy = false
             switch r {
             case .success(let sent):
-                ReplyWatch.add(sent.ref)
+                // Watched from when it shows on their Mac, so a ping for next week still gets its reply.
+                ReplyWatch.add(sent.ref, at: max(Date().ms, due?.ms ?? 0))
                 let online = sent.target.online
-                self.model.composeNote = due != nil ? "Sent. \(first) sees it at the time you picked."
+                let scheduled = (due?.timeIntervalSinceNow ?? 0) > 30
+                self.model.composeNote = scheduled ? "Sent. \(first) sees it at the time you picked."
                     : online ? "Sent to \(first)." : "Sent. \(first) sees it when their Mac is back."
                 self.model.newTitle = ""
                 self.model.newUrgency = .green
