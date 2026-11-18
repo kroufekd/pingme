@@ -28,7 +28,7 @@ enum SnapshotState: String, CaseIterable {
         case .replyOpen, .replyTyping, .replySent, .newLater: return 210
         case .waiting, .waitingHover: return 230
         case .people, .peopleHover, .peopleAdd, .peopleInvited: return 260
-        case .peopleDetail: return 320
+        case .peopleDetail: return 380
         case .peopleEmpty, .pair, .pairing, .pairFailed, .pairDone: return 150
         case .agentTriage: return 270
         case .agentDone, .agentReply: return 210

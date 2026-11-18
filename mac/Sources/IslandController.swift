@@ -726,9 +726,17 @@ final class IslandController {
         // Clicks and keys on the island: Esc closes it, any click counts as "seen it" and stops reminders.
         if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] e in
             let isEscape = e.type == .keyDown && e.keyCode == 53
+            let movesFocus = e.type == .keyDown && InputMode.movesFocus(e.keyCode)
+            let isClick = e.type != .keyDown
             let window = e.window
             let swallow = MainActor.assumeIsolated { () -> Bool in
                 guard let self, let p = self.panel, window === p else { return false }
+                // Focus rings show after Tab or arrows, and go away with the next click.
+                if movesFocus {
+                    InputMode.shared.keyboard = true
+                } else if isClick, InputMode.shared.keyboard {
+                    InputMode.shared.keyboard = false
+                }
                 if isEscape {
                     self.handleEscape()
                     return true

@@ -443,12 +443,23 @@ struct Dot: View {
     }
 }
 
-/// White ring 2 px outside the control, like the design's `:focus-visible`.
+/// Whether focus last moved by keyboard (Tab, arrows) or by a click. Like the web's
+/// `:focus-visible`: a click on a row gives it focus too, but the ring is for the keyboard.
+final class InputMode: ObservableObject, @unchecked Sendable {
+    nonisolated(unsafe) static let shared = InputMode()
+    @Published var keyboard = false
+
+    /// Keys that move focus between controls. Typing in a field does not count.
+    static func movesFocus(_ keyCode: UInt16) -> Bool { [48, 123, 124, 125, 126].contains(keyCode) }
+}
+
+/// White ring 2 px outside the control, like the design's `:focus-visible`: only after keyboard use.
 private struct FocusRing<S: InsettableShape>: ViewModifier {
     let shape: S
     let on: Bool
+    @ObservedObject private var input = InputMode.shared
     func body(content: Content) -> some View {
-        content.overlay { if on { shape.inset(by: -3).stroke(Color.white, lineWidth: 2) } }
+        content.overlay { if on && input.keyboard { shape.inset(by: -3).stroke(Color.white, lineWidth: 2) } }
     }
 }
 
@@ -655,6 +666,9 @@ struct TaskCard: View {
                                                     lineHeight: 20, max: Self.titleWidth), alignment: .leading)
                         .padding(.top, 1)
                         .padding(.vertical, 0.5)
+                        // The text can be selected, and a right click copies all of it.
+                        .textSelection(.enabled)
+                        .contextMenu { if task.unreadable != true { copyButton(task.title) } }
                     if task.forAgent, let report = task.report, !report.isEmpty {
                         Text(report)
                             .font(Geist.font(12.5))
@@ -664,6 +678,8 @@ struct TaskCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(width: Self.titleWidth, alignment: .leading)
                             .padding(.top, 6)
+                            .textSelection(.enabled)
+                            .contextMenu { copyButton(report) }
                             .accessibilityLabel("Agent report: \(report)")
                     }
                 }
@@ -712,6 +728,13 @@ struct TaskCard: View {
     }
 
     private var whoText: String { Self.whoText(task) }
+
+    private func copyButton(_ text: String) -> some View {
+        Button("Copy text") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+    }
 
     static func whoText(_ task: TodoTask) -> String {
         if task.isAgentSession { return "Claude · \(task.fromName)" }
@@ -1157,21 +1180,35 @@ struct PeopleCard: View {
                     QuietLine(text: emptyText)
                 } else {
                     ForEach(model.contacts) { c in
-                        ListRow(id: c.id, model: model, focused: $focused, focusable: true) { lit in
-                            ContactRowContent(contact: c, now: model.now, lit: lit, open: model.openContact == c.id)
+                        let open = model.openContact == c.id
+                        // An open contact is one card: its row and its detail on one soft background.
+                        VStack(alignment: .leading, spacing: 0) {
+                            ListRow(id: c.id, model: model, focused: $focused, focusable: true) { lit in
+                                ContactRowContent(contact: c, now: model.now, lit: lit, open: open)
+                            }
+                            .onTapGesture { actions.toggleContact(c.id) }
+                            .onKeyPress(.return) { actions.toggleContact(c.id); return .handled }
+                            .onKeyPress(.space) { actions.toggleContact(c.id); return .handled }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(ContactRowContent.label(c, now: model.now))
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityValue(open ? "Open" : "")
+                            .accessibilityHint("Safety codes")
+                            .accessibilityAction(.default) { actions.toggleContact(c.id) }
+                            if open {
+                                KeyDetail(contact: c, mine: model.myKey, onRemove: { actions.removeContact(c.id) })
+                                    .transition(.opacity)
+                            }
                         }
-                        .onTapGesture { actions.toggleContact(c.id) }
-                        .onKeyPress(.return) { actions.toggleContact(c.id); return .handled }
-                        .onKeyPress(.space) { actions.toggleContact(c.id); return .handled }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(ContactRowContent.label(c, now: model.now))
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityHint("Key fingerprint")
-                        .accessibilityAction(.default) { actions.toggleContact(c.id) }
-                        if model.openContact == c.id {
-                            KeyDetail(contact: c, mine: model.myKey, onRemove: { actions.removeContact(c.id) })
-                                .transition(.opacity)
+                        .background {
+                            if open {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Ink.island2)
+                                    .padding(.horizontal, -8)
+                                    .transition(.opacity)
+                            }
                         }
+                        .padding(.vertical, open ? 4 : 0)
                     }
                     ForEach(model.invites) { i in
                         ListRow(id: i.id, model: model, focused: $focused, focusable: false) { lit in
@@ -1296,31 +1333,45 @@ private struct KeyDetail: View {
     /// The first press only asks; the second removes.
     @State private var armed = false
 
+    private var firstName: String { contact.name.split(separator: " ").first.map(String.init) ?? contact.name }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            VStack(alignment: .leading, spacing: 4) {
-                if contact.keys.isEmpty {
-                    line("", "No devices")
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            Text(contact.keys.isEmpty
+                 ? "\(firstName) has no device yet, so there is nothing to compare."
+                 : "Same numbers on \(firstName)'s screen mean nobody else can read your pings.")
+                .font(Geist.font(12))
+                .foregroundStyle(Ink.on3)
+                .lineSpacing(1.5)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, contact.keys.isEmpty ? 4 : 8)
+            VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(contact.keys.prefix(4).enumerated()), id: \.offset) { _, k in
-                    line(k.kind, k.fingerprint)
+                    line(k.kind == "Mac" ? "Their Mac" : "Their web", k.fingerprint)
                 }
-                if let mine { line("This Mac", mine) }
+                if let mine, !contact.keys.isEmpty { line("This Mac", mine) }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Key fingerprints")
+            .accessibilityLabel("Safety codes")
             Button {
                 if armed { onRemove() } else { armed = true }
             } label: {
-                QLabel(icon: "x", text: armed ? "Really remove" : "Remove from contacts")
+                Text(armed ? "Click again to remove" : "Remove from contacts")
             }
-            .buttonStyle(QStyle())
-            .padding(.top, 4)
+            .buttonStyle(LinkStyle(danger: armed))
+            .padding(.top, 8)
             .accessibilityLabel(armed ? "Confirm: remove \(contact.name) from contacts" : "Remove \(contact.name) from contacts")
+            // Unconfirmed, the question goes away again.
+            .task(id: armed) {
+                guard armed else { return }
+                try? await Task.sleep(for: .seconds(4))
+                armed = false
+            }
         }
         .padding(.leading, 24)
+        .padding(.trailing, 8)
         .padding(.top, 2)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
     }
 
     private func line(_ label: String, _ value: String) -> some View {
@@ -1328,13 +1379,41 @@ private struct KeyDetail: View {
             Text(label)
                 .font(Geist.font(12, 500))
                 .foregroundStyle(Ink.on3)
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 66, alignment: .leading)
             Text(value)
-                .font(Geist.mono(12))
-                .foregroundStyle(Ink.on2)
+                .font(Geist.mono(12.5))
+                .foregroundStyle(Ink.on)
                 .textSelection(.enabled)
         }
         .frame(minHeight: 18)
+    }
+}
+
+/// A quiet text button: no pill, just words that brighten on hover. `danger` asks for a second click.
+private struct LinkStyle: ButtonStyle {
+    var danger = false
+    func makeBody(configuration: Configuration) -> some View { LinkBody(config: configuration, danger: danger) }
+}
+
+private struct LinkBody: View {
+    let config: ButtonStyle.Configuration
+    let danger: Bool
+    @State private var hover = false
+    @Environment(\.isFocused) private var focused
+
+    var body: some View {
+        config.label
+            .font(Geist.font(12, 550))
+            .foregroundStyle(danger ? Ink.urgency(.red) : (hover ? Ink.on : Ink.on3))
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .contentShape(Capsule())
+            .modifier(FocusRing(shape: Capsule(), on: focused))
+            .padding(.horizontal, -6)
+            .opacity(config.isPressed ? 0.7 : 1)
+            .onHover { hover = $0 }
+            .animation(.easeOut(duration: 0.15), value: hover)
+            .animation(.easeOut(duration: 0.15), value: danger)
     }
 }
 
@@ -1346,7 +1425,7 @@ private struct InviteRowContent: View {
 
     private var detail: String {
         if let email = invite.email, !email.isEmpty { return email }
-        return invite.expiresAt.map { "until \(Fmt.day(Date(ms: $0)))" } ?? "invite"
+        return invite.expiresAt.map { "invited, link until \(Fmt.day(Date(ms: $0)))" } ?? "invited"
     }
 
     var body: some View {
