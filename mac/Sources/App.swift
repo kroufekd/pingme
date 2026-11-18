@@ -74,7 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         tick()
-        switch IdentityStore.load() {
+        // Read once: every read of a locked item is another Keychain prompt.
+        let loaded = IdentityStore.load()
+        switch loaded {
         case .success(let id?) where id.paired:
             usePaired(id)
         case .success:
@@ -82,15 +84,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island.open(.pair, user: false) }
         case .failure(let e):
             // Never treat this as "not paired": the key may still work after a restart. The menu says
-            // what is wrong, and "Connect this Mac" there starts over only when the owner asks.
+            // what is wrong. Pairing refuses a locked key (the old Mac would stay on the account).
             store.syncError = e.message
             if case .denied = e {
-                // Said on the island too, with a retry: the menu bar icon alone is easy to miss.
-                island.keyLocked = true
+                // Said on the island too, with a way out: the menu bar icon alone is easy to miss.
+                // Right after our own restart for this, the restart did not help either.
+                let restarted = Date().timeIntervalSince1970 - UserDefaults.standard.double(forKey: Self.keyRestartKey) < 300
+                island.keyLock = restarted ? .stuck : .locked
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island.open(.pair, user: false) }
             }
         }
+        if case .failure(.denied) = loaded {} else { UserDefaults.standard.removeObject(forKey: Self.keyRestartKey) }
     }
+
+    private static let keyRestartKey = "pingme.keyRestartAt"
 
     /// Someone joined or connected a Mac since the last list: said once, as a quiet note on the island.
     private func contactsLoaded(_ contacts: [Contact]) {
@@ -100,23 +107,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !news.isEmpty { tick() }
     }
 
-    /// "Try again" on the island: macOS asks for the Keychain once more.
+    /// "Try again" on the island: read the key once more; if macOS still refuses, restart pingme
+    /// (after a rebuild only a fresh process gets the prompt). After that restart it is "stuck".
     private func retryKey() {
         switch IdentityStore.load() {
         case .success(let id?) where id.paired:
+            UserDefaults.standard.removeObject(forKey: Self.keyRestartKey)
             usePaired(id)
             island.keyUnlocked()
         case .success:
+            UserDefaults.standard.removeObject(forKey: Self.keyRestartKey)
             store.syncError = nil
-            island.keyLocked = false
+            island.keyLock = nil
             updateStatusItem()
         case .failure(.denied):
-            break
+            if island.keyLock == .locked { restart() }
         case .failure(let e):
             store.syncError = e.message
-            island.keyLocked = false
+            island.keyLock = nil
             updateStatusItem()
         }
+    }
+
+    /// Quits and opens again a second later. A plain quit: launchd does not restart a clean exit.
+    private func restart() {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.keyRestartKey)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundleURL.path]
+        do { try p.run() } catch { return }
+        NSApp.terminate(nil)
     }
 
     private func usePaired(_ id: DeviceIdentity) {

@@ -122,8 +122,8 @@ final class IslandModel: ObservableObject {
     @Published var busy = false
     // Pairing
     @Published var pair: Pairing.State = .idle
-    /// The Keychain refused this app its key (a rebuilt app, or Deny clicked). The pair state offers a retry.
-    @Published var keyLocked = false
+    /// The Keychain refused this app its key (a rebuilt app, or Deny clicked). The pair state offers a way out.
+    @Published var keyLock: KeyLock?
     /// Snapshots only: which field draws focus and a caret ("reply", "title", "name").
     @Published var stillFocus: String?
 }
@@ -147,8 +147,17 @@ struct IslandActions {
     var removeContact: (String) -> Void = { _ in }
     var pair: () -> Void = {}
     var cancelPair: () -> Void = {}
-    /// Reads the key from the Keychain again; macOS asks once more.
+    /// Reads the key from the Keychain again (and restarts pingme when that alone did not help).
     var retryKey: () -> Void = {}
+    var openKeychain: () -> Void = {}
+}
+
+/// Why the island cannot use this Mac's key.
+enum KeyLock: Equatable {
+    /// First refusal: try again, macOS may ask.
+    case locked
+    /// Still refused after a restart: only removing the item in Keychain Access helps.
+    case stuck
 }
 
 private struct StillKey: EnvironmentKey { static let defaultValue = false }
@@ -1394,7 +1403,7 @@ private struct KeyDetail: View {
 }
 
 /// A quiet text button: no pill, just words that brighten on hover. `danger` asks for a second click.
-private struct LinkStyle: ButtonStyle {
+struct LinkStyle: ButtonStyle {
     var danger = false
     func makeBody(configuration: Configuration) -> some View { LinkBody(config: configuration, danger: danger) }
 }
@@ -1493,16 +1502,30 @@ struct PairCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             switch model.pair {
-            case .idle where model.keyLocked, .failed where model.keyLocked:
+            case .idle where model.keyLock == .locked, .failed where model.keyLock == .locked:
                 HStack(spacing: 10) {
                     Button(action: actions.retryKey) { Text("Try again") }
                         .buttonStyle(PrimaryStyle())
-                        .accessibilityHint("macOS asks for the Keychain again")
-                    Text("macOS kept pingme's key locked. Click Always Allow when it asks.")
+                        .accessibilityHint("Reads the key again, and restarts pingme if that is not enough")
+                    Text("macOS didn't let pingme read its key. Click Always Allow if macOS asks.")
                         .font(Geist.font(12))
                         .foregroundStyle(Ink.on2)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+            case .idle where model.keyLock == .stuck, .failed where model.keyLock == .stuck:
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Still locked after a restart. In Keychain Access, delete the item \u{201C}pingme\u{201D}, then connect again.")
+                        .font(Geist.font(12))
+                        .foregroundStyle(Ink.on2)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 14) {
+                        Button(action: actions.openKeychain) { Text("Open Keychain Access") }
+                            .buttonStyle(PrimaryStyle())
+                        Button(action: actions.retryKey) { Text("Check again") }
+                            .buttonStyle(LinkStyle())
+                    }
                 }
             case .idle, .failed:
                 HStack(spacing: 10) {
@@ -1568,7 +1591,7 @@ struct PairCard: View {
         .padding(.top, 6)
         .padding(.bottom, 2)
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.pair)
-        .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.keyLocked)
+        .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.keyLock)
     }
 }
 

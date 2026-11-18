@@ -85,9 +85,9 @@ final class IslandController {
     var onChange: (() -> Void)?
     /// "Try again" on a locked Keychain.
     var onRetryKey: (() -> Void)?
-    var keyLocked: Bool {
-        get { model.keyLocked }
-        set { model.keyLocked = newValue }
+    var keyLock: KeyLock? {
+        get { model.keyLock }
+        set { model.keyLock = newValue }
     }
     /// This Mac is connected to an account. Without it the island offers "Connect this Mac"
     /// in place of people; local tasks and agent sessions work either way.
@@ -368,11 +368,16 @@ final class IslandController {
         removeContact: { [weak self] id in self?.removeContact(id) },
         pair: { [weak self] in self?.pairing.start() },
         cancelPair: { [weak self] in self?.pairing.cancel() },
-        retryKey: { [weak self] in self?.onRetryKey?() })
+        retryKey: { [weak self] in self?.onRetryKey?() },
+        openKeychain: {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.keychainaccess") {
+                NSWorkspace.shared.openApplication(at: url, configuration: .init())
+            }
+        })
 
     /// The key came back after "Try again": the pair card has nothing left to say.
     func keyUnlocked() {
-        keyLocked = false
+        keyLock = nil
         if target == .pair { closeTool() }
     }
 
