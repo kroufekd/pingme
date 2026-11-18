@@ -431,7 +431,7 @@ export async function sendCore(
 
   if (!(await hitLimit(ctx, `send:${fromUserId}:${toUserId}`, SEND_LIMIT, HOUR, now))) return fail("rate-limited")
 
-  const repeat = input.forAgent ? undefined : (input.repeat as Repeat | undefined)
+  // Repeating pings are gone. A rule from an older client is still checked above, then dropped.
   const urgency = input.urgency as Urgency
   await ctx.db.insert("messages", {
     ref,
@@ -441,7 +441,6 @@ export async function sendCore(
     forAgent: input.forAgent,
     urgency,
     dueAt,
-    repeat,
     createdAt: now,
     // Counted from when it is due: a ping set for next month still reaches a Mac that is off today.
     expiresAt: Math.max(now, dueAt) + MESSAGE_TTL,
@@ -459,7 +458,6 @@ export async function sendCore(
     forAgent: input.forAgent,
     urgency,
     dueAt,
-    repeat,
     createdAt: now,
     titleEnvelopes,
   })

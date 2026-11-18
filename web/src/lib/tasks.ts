@@ -1,5 +1,4 @@
 import { dueLabel, snoozeLabel } from './time'
-import type { Repeat } from './time'
 
 // What the sent list shows. Network rows are mapped into this in use-network.ts.
 export type Urgency = 'green' | 'orange' | 'red'
@@ -22,7 +21,6 @@ export type Row = {
   /** No Mac of theirs came on in time: it will not arrive. */
   undelivered?: boolean
   dueAt: number | null
-  repeat?: Repeat
   status: Status
   statusAt: number
   snoozedUntil?: number
@@ -50,15 +48,6 @@ export const URGENCIES: { value: Urgency; word: string; cls: string }[] = [
 export function urgencyOf(u: Urgency) {
   return URGENCIES.find((x) => x.value === u) ?? URGENCIES[0]
 }
-
-export const REPEAT_OPTIONS: { value: Repeat | ''; label: string }[] = [
-  { value: '', label: 'Once' },
-  { value: 'daily', label: 'Every day' },
-  { value: 'weekdays', label: 'Weekdays' },
-  { value: 'weekly', label: 'Every week' },
-  { value: 'biweekly', label: 'Every 2 weeks' },
-  { value: 'monthly', label: 'Every month' },
-]
 
 /** What the status cell shows. "typing" is not a server status, it wins while typingUntil is ahead. */
 export type Kind = 'queued' | 'waiting' | 'lost' | 'popped' | 'seen' | 'typing' | 'replied' | 'done' | 'snoozed'

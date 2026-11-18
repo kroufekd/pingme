@@ -741,7 +741,7 @@ body {
     animation: u-ring 1.6s var(--ease) 0.4s 2;
   }
 
-  /* ---- later: day, time, repeat. Its row is always there, so nothing below moves. ---- */
+  /* ---- later: day and time. Its row is always there, so nothing below moves. ---- */
   .pf-later {
     display: flex;
     align-items: center;
@@ -801,28 +801,6 @@ body {
   input.chip::-webkit-date-and-time-value {
     text-align: left;
   }
-  .chip.rep {
-    color: var(--quiet);
-    cursor: pointer;
-    transition: color 0.25s var(--ease);
-  }
-  .chip.rep.set {
-    color: var(--ink);
-  }
-  .chip.rep select {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  .chip.rep:focus-within {
-    outline: 2px solid var(--ink);
-    outline-offset: 3px;
-  }
-
   /* ---- time: on a desktop our own list instead of the browser's grey one ---- */
   .tf {
     position: relative;

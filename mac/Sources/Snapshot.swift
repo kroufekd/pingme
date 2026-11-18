@@ -157,7 +157,6 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.newUrgency = state == .newLater ? .orange : .green
         model.later = state == .newLater
         model.laterDate = at(days: 1, 9, 30)
-        model.laterRepeat = state == .newLater ? "weekdays" : ""
         if state == .new { model.stillFocus = "title" }
     case .waiting, .waitingHover:
         model.mode = .waiting

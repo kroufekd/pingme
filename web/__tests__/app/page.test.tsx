@@ -496,25 +496,16 @@ describe('who it goes to', () => {
 })
 
 describe('the sent list opens on this device', () => {
-  it('opens the later options with day, time and the six repeat options', async () => {
+  it('opens the later options with day and time, and no repeat', async () => {
     member()
     render(<App />)
     const when = await screen.findByRole('button', { name: 'Send later' })
     expect(when).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('combobox', { name: 'Repeat' })).toBeNull()
     fireEvent.click(when)
     expect(when).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByLabelText('Day')).toBeVisible()
     expect(screen.getByLabelText('Time')).toBeVisible()
-    const repeat = screen.getByRole('combobox', { name: 'Repeat' })
-    expect(Array.from((repeat as HTMLSelectElement).options).map((o) => [o.value, o.text])).toEqual([
-      ['', 'Once'],
-      ['daily', 'Every day'],
-      ['weekdays', 'Weekdays'],
-      ['weekly', 'Every week'],
-      ['biweekly', 'Every 2 weeks'],
-      ['monthly', 'Every month'],
-    ])
+    expect(screen.queryByRole('combobox', { name: 'Repeat' })).toBeNull()
   })
 
   it('decrypts every row and shows its status word', async () => {

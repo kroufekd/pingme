@@ -278,16 +278,21 @@ extension Selftest {
             c.check("reply outcome \(status) \(code ?? "-") is \(want)", Net.outcome(status: status, error: code) == want)
         }
 
-        // A repeating ping keeps who it is from on its next occurrence.
+        // Repeating pings are gone: a rule from an older sender is dropped and Done ends the ping.
         let rep = TaskStore(preview: [])
         let wRef = Seal.newRef()
         let wSealed = try? Seal.seal(publicKey: Seal.publicKey(of: dominik.mac.key), plaintext: "Zalij kytky",
                                      aad: Seal.aad(kind: .title, ref: wRef, from: viki.userId, to: dominik.userId))
         _ = rep.receive([Net.open(item(ref: wRef, from: viki.userId, to: dominik.userId, env: wSealed, repeat: "daily"), key: dominik.mac.key)])
+        c.check("a repeat rule is not kept", rep.task(wRef)?.repeat == nil)
         rep.markDone(wRef)
-        let next = rep.pending.first
-        c.check("next occurrence keeps ref and users",
-                next?.taskRef == wRef && next?.fromUserId == viki.userId && next?.toUserId == dominik.userId && next?.id != wRef)
+        c.check("done ends it, nothing comes back", rep.pending.isEmpty)
+        var oldRepeat = TodoTask(_id: "old", title: "Zalij kytky", dueAt: 1, createdAt: 1, source: "mac", createdByName: "Mac",
+                           doneAt: nil, snoozedUntil: nil, snoozeCount: 0, followUpTitle: nil, followUpMinutes: nil, followsFrom: nil)
+        oldRepeat.repeat = "weekly"
+        let savedRepeat = TaskStore(preview: [oldRepeat])
+        savedRepeat.markDone("old")
+        c.check("a task saved with a repeat ends on done", savedRepeat.pending.isEmpty)
 
         // Legacy plaintext reply.
         let leg = TaskStore(preview: [])

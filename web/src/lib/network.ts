@@ -82,7 +82,6 @@ export async function sendSealed(
     forAgent: boolean
     urgency: Urgency
     dueAt?: number
-    repeat?: Repeat
     recipientDevices: DeviceInfo[]
     myDevices: DeviceInfo[]
     own?: { deviceId: string; publicKey: string } | null
@@ -94,7 +93,7 @@ export async function sendSealed(
     to: p.to,
     forAgent: p.forAgent,
     urgency: p.urgency,
-    ...(p.forAgent ? {} : { dueAt: p.dueAt, repeat: p.repeat }),
+    ...(p.forAgent ? {} : { dueAt: p.dueAt }),
     envelopes: await sealEnvelopes(unique(recipient.filter((d) => d.kind === 'mac')), p.text, aad),
     titleEnvelopes: await sealEnvelopes(unique(mine), p.text, aad),
   })

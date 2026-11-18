@@ -105,7 +105,6 @@ final class IslandModel: ObservableObject {
     @Published var newUrgency: Urgency = .green
     @Published var later = false
     @Published var laterDate = Date()
-    @Published var laterRepeat = ""
     @Published var focusRequest = 0
     // People
     @Published var contacts: [ContactRow] = []
@@ -505,7 +504,7 @@ private struct EarBody: View {
     }
 }
 
-/// The dark pill (`.q`): Reply, 10 min, reply chips, day, time, repeat, Invite, Key.
+/// The dark pill (`.q`): Reply, 10 min, reply chips, day, time, Invite, Key.
 struct QStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { QBody(config: configuration) }
 }
@@ -965,11 +964,9 @@ private struct WordBody: View {
     }
 }
 
-/// Day, time and repeat behind the clock. Each pill opens a menu.
+/// Day and time behind the clock. Each pill opens a menu.
 struct LaterRow: View {
     @ObservedObject var model: IslandModel
-
-    private static let repeatOptions: [(String, String)] = [("", "Once")] + Recurrence.all.map { ($0, Recurrence.label($0) ?? $0) }
 
     var body: some View {
         let cal = Calendar.current
@@ -988,10 +985,6 @@ struct LaterRow: View {
                      items: (0..<96).map { (String(format: "%02d:%02d", $0 / 4, ($0 % 4) * 15), $0 == slot) }) { i in
                 let d = cal.date(bySettingHour: i / 4, minute: (i % 4) * 15, second: 0, of: model.laterDate) ?? model.laterDate
                 model.laterDate = d
-            }
-            MenuPill(text: Self.repeatOptions.first { $0.0 == model.laterRepeat }?.1 ?? "Once", icon: "repeat", a11y: "Repeat",
-                     items: Self.repeatOptions.map { ($0.1, $0.0 == model.laterRepeat) }) { i in
-                if Self.repeatOptions.indices.contains(i) { model.laterRepeat = Self.repeatOptions[i].0 }
             }
         }
     }
@@ -1145,7 +1138,6 @@ private struct WaitingRowContent: View {
         var parts = [t.kind == .owner && t.source != "web" ? "from me" : t.createdByName]
         if let m = TaskCard.marker(t) { parts.append(m) }
         if t.isSnoozed(at: now) { parts.append("snoozed") }
-        if let r = t.repeat.flatMap(Recurrence.label) { parts.append(r.prefix(1).lowercased() + r.dropFirst()) }
         return parts.joined(separator: ", ")
     }
 

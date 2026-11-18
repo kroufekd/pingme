@@ -447,11 +447,10 @@ final class IslandController {
         let title = model.newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         let due = model.later ? model.laterDate : Date()
-        store.add(title: title, dueAt: due, urgency: model.newUrgency, repeat: model.later ? model.laterRepeat : nil)
+        store.add(title: title, dueAt: due, urgency: model.newUrgency)
         model.newTitle = ""
         model.newUrgency = .green
         model.later = false
-        model.laterRepeat = ""
         onChange?()
         closeTool()
         tick()

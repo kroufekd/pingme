@@ -392,18 +392,7 @@ final class TaskStore: ObservableObject {
                 source: "followup", createdByName: t.createdByName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
                 followUpTitle: nil, followUpMinutes: nil, followsFrom: t.title, urgency: t.urgency))
         }
-        if let rule = t.repeat, let next = Recurrence.next(rule: rule, from: t.dueAt, after: Date()) {
-            // The next occurrence keeps who sent it and its taskRef, under a new local id.
-            let n = TodoTask(
-                _id: UUID().uuidString, title: t.title, dueAt: next, createdAt: now,
-                source: t.source, createdByName: t.createdByName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
-                followUpTitle: t.followUpTitle, followUpMinutes: t.followUpMinutes, followsFrom: nil, repeat: rule,
-                senderId: t.senderId, senderKind: t.senderKind, urgency: t.urgency, taskRef: t.taskRef,
-                stage: t.taskRef == nil ? nil : "waiting", fromUserId: t.fromUserId, toUserId: t.toUserId,
-                fromAgent: t.fromAgent, plain: t.plain)
-            pending.append(n)
-            emit(n, "waiting")
-        }
+        // Repeating pings are gone: a task saved with a repeat rule ends here like any other.
         commit()
     }
 
@@ -423,14 +412,14 @@ final class TaskStore: ObservableObject {
 
     func delete(_ id: String) { pending.removeAll { $0.id == id }; commit() }
 
-    func add(title: String, dueAt: Date, urgency: Urgency, repeat rule: String?) {
+    func add(title: String, dueAt: Date, urgency: Urgency) {
         let title = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(kTitleMax))
         guard !title.isEmpty else { return }
         pending.append(TodoTask(
             _id: UUID().uuidString, title: title, dueAt: dueAt.ms, createdAt: Date().ms,
             source: "mac", createdByName: "Mac", doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
             followUpTitle: nil, followUpMinutes: nil, followsFrom: nil,
-            repeat: Recurrence.valid(rule), urgency: urgency.rawValue))
+            urgency: urgency.rawValue))
         commit()
     }
 
@@ -460,7 +449,7 @@ final class TaskStore: ObservableObject {
                 _id: p.ref, title: String(p.title.prefix(kTitleMax)), dueAt: p.dueAt, createdAt: p.createdAt,
                 source: "web", createdByName: p.fromName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
                 followUpTitle: nil, followUpMinutes: nil, followsFrom: nil,
-                repeat: Recurrence.valid(p.repeat),
+                // A repeat rule from an older sender is ignored: every ping pops once.
                 senderId: p.fromUserId, senderKind: p.fromAgent == nil ? "person" : "agent",
                 urgency: (Urgency(rawValue: p.urgency) ?? .green).rawValue,
                 taskRef: p.ref,
