@@ -7,7 +7,7 @@ import { isOnline } from '@/lib/network'
 import type { ContactsView, MyDevice } from '@/lib/network'
 import type { Me } from '@/lib/tasks'
 import { useNow } from '@/lib/time'
-import { forgetBrowser } from '@/lib/forget'
+import { forgetBrowser, setLeaving } from '@/lib/forget'
 import { Account } from './account'
 import { ConnectAgent } from './connect'
 import { Icon } from './icon'
@@ -158,10 +158,16 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const revokeDevice = useMutation(api.devices.revoke)
   // Signing out forgets this browser too: its device on the account, its key and what it kept.
   const signOutHere = useCallback(async () => {
-    if (device.deviceId) await revokeDevice({ deviceId: device.deviceId }).catch(() => {})
-    await forgetBrowser()
-    setDrawer(null)
-    await signOut()
+    // From here on nothing registers this browser again, though the revoke makes it look lost.
+    setLeaving(true)
+    try {
+      if (device.deviceId) await revokeDevice({ deviceId: device.deviceId }).catch(() => {})
+      await forgetBrowser()
+      setDrawer(null)
+      await signOut()
+    } catch {
+      setLeaving(false)
+    }
   }, [device.deviceId, revokeDevice, signOut])
   const account = me?.status === 'member' ? <Account name={me.name} email={me.email} onSignOut={signOutHere} /> : undefined
   const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null), account)

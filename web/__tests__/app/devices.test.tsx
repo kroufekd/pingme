@@ -4,6 +4,7 @@ import { NOTICE_MS, newMacs } from '@/components/app/devices'
 import { resetDeviceKey } from '@/lib/device-key'
 import type { ContactsView, MyDevice } from '@/lib/network'
 import { resetVault, vaultGet, vaultSet } from '@/lib/vault'
+import { setLeaving } from '@/lib/forget'
 import { RENAME, SAVE, SIGN_OUT, SIGN_OUT_SURE, NAME_LABEL } from '@/components/app/account'
 import { DOMINIK, ME, WEB, contact, contactsView, keys } from './net-fixtures'
 
@@ -73,6 +74,7 @@ beforeEach(async () => {
   h.queries = {}
   h.mutations = {}
   h.results = {}
+  setLeaving(false)
   resetVault()
   resetDeviceKey()
   await vaultSet('deviceKey', K.me)
@@ -193,6 +195,11 @@ describe('your account', () => {
     h.queries['senders:me'] = { status: 'member', name: 'Viki', email: 'viki@example.com', userId: ME, onboarded: true }
     h.results['senders:rename'] = true
     h.results['devices:revoke'] = true
+    // The revoke makes this browser look lost on the server, as it does live.
+    mutation('devices:revoke').mockImplementation(async () => {
+      h.queries['messages:mine'] = { status: 'member', deviceActive: false, rows: [] }
+      return true
+    })
     h.signOut.mockClear()
     localStorage.setItem('pingme.contacts-known', '{"people":{}}')
     localStorage.setItem('pingme.no-mac-later', '1')
@@ -218,6 +225,10 @@ describe('your account', () => {
     expect(localStorage.getItem('pingme.contacts-known')).toBeNull()
     expect(localStorage.getItem('pingme.no-mac-later')).toBeNull()
     expect(await vaultGet('replies')).toBeUndefined()
+    expect(await vaultGet('deviceKey')).toBeUndefined()
+    // Signing out never registers this browser again on the account it leaves.
+    await new Promise((r) => setTimeout(r, 20))
+    expect(mutation('devices:registerWeb')).toHaveBeenCalledTimes(1)
     expect(await vaultGet('deviceKey')).toBeUndefined()
   })
 })

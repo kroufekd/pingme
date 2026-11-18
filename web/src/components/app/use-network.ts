@@ -8,7 +8,7 @@ import type { ContactsView, MineView, SentRow } from '@/lib/network'
 import { newRef } from '@/lib/seal'
 import type { Kind } from '@/lib/seal'
 import type { Row } from '@/lib/tasks'
-import { REPLIES } from '@/lib/forget'
+import { REPLIES, isLeaving, setLeaving } from '@/lib/forget'
 import { vaultGet, vaultSet } from '@/lib/vault'
 import type { NewTask, SendResult } from './task-form'
 
@@ -27,6 +27,7 @@ export function useDevice(enabled: boolean) {
 
   const ensure = useCallback(
     (again = false): Promise<Device> => {
+      if (isLeaving()) return Promise.resolve({ ...NO_DEVICE, settled: true })
       if (inflight.current && !again) return inflight.current
       const gen = generation.current
       const p = (async (): Promise<Device> => {
@@ -59,6 +60,7 @@ export function useDevice(enabled: boolean) {
       return
     }
     // Signed out: the next account registers this browser for itself.
+    setLeaving(false)
     generation.current += 1
     inflight.current = null
     setState(NO_DEVICE)

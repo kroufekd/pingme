@@ -6,6 +6,18 @@ const LOCAL = ['pingme.contacts-known', 'pingme.no-mac-later', 'pingme.notify-as
 /** Replies already shown here, kept in the vault by use-network.ts. */
 export const REPLIES = 'replies'
 
+let leaving = false
+/**
+ * Signing out is under way: nothing may register this browser again (the revoked device looks
+ * "lost" for a moment, which would otherwise re-register it). Cleared once the session is gone.
+ */
+export function setLeaving(on: boolean) {
+  leaving = on
+}
+export function isLeaving() {
+  return leaving
+}
+
 /**
  * Signing out forgets this browser: its key (pings sealed to it can no longer be opened here),
  * the replies kept here and the small notes, so the next account starts clean.
