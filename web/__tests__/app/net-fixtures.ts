@@ -77,6 +77,7 @@ export async function sentRow(
     createdAt: now,
     status: 'queued',
     statusAt: now,
+    undelivered: false,
     snoozedUntil: null,
     typingUntil: null,
     title: text === null ? null : await sealFor(forKey.publicKey, 'title', ref, text, to),

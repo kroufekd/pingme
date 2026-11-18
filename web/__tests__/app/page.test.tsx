@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { NOT_DELIVERED } from '@/components/app/task-list'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetDeviceKey } from '@/lib/device-key'
 import type { Contact, ContactsView, SentRow } from '@/lib/network'
@@ -527,16 +528,18 @@ describe('the sent list opens on this device', () => {
       await sentRow(K.me, { status: 'snoozed', snoozedUntil: now + 10 * 60_000 - 1000 }),
       await sentRow(K.me, { status: 'waiting' }),
       await sentRow(K.me, { status: 'waiting', dueAt: new Date(new Date(now + 86_400_000).setHours(9, 30, 0, 0)).getTime() }),
+      await sentRow(K.me, { status: 'queued', undelivered: true }),
     ]
     member(rows)
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Ping' })
     expect(view.container.querySelectorAll('.it')).toHaveLength(0)
-    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Sent: 9, new reply'))
+    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Sent: 10, new reply'))
     fireEvent.click(sentToggle())
-    await waitFor(() => expect(screen.getAllByText('Pošli mi fotky z hor')).toHaveLength(9))
-    expect(shownWords(view.container)).toEqual(['sending', 'popped up', 'seen', 'typing', 'reply', 'done', 'in 10 min', 'waiting', 'tomorrow 9:30'])
+    await waitFor(() => expect(screen.getAllByText('Pošli mi fotky z hor')).toHaveLength(10))
+    expect(shownWords(view.container)).toEqual(['sending', 'popped up', 'seen', 'typing', 'reply', 'done', 'in 10 min', 'waiting', 'tomorrow 9:30', 'not delivered'])
     expect(screen.getByText('Jdu na to')).toBeInTheDocument()
+    expect(screen.getByText(NOT_DELIVERED)).toBeInTheDocument()
     expect(view.container.querySelectorAll('.it.gone')).toHaveLength(1)
   })
 

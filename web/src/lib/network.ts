@@ -33,6 +33,8 @@ export type SentRow = {
   createdAt: number
   status: 'queued' | 'waiting' | 'popped' | 'seen' | 'replied' | 'done' | 'snoozed'
   statusAt: number
+  /** Queued past its delivery window: the recipient's Macs will not get it. */
+  undelivered: boolean
   snoozedUntil: number | null
   typingUntil: number | null
   title: Sealed | null

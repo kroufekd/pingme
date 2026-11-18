@@ -206,6 +206,7 @@ export function useSent({
       to: r.forAgent ? 'agent' : 'person',
       toName: r.toName,
       offline: r.status === 'queued' && offline(r.toUserId),
+      undelivered: r.undelivered === true,
       dueAt: planned(r.dueAt, r.createdAt),
       repeat: (r.repeat ?? undefined) as Row['repeat'],
       status: r.status,

@@ -19,6 +19,8 @@ export type Row = {
   toName?: string
   /** The recipient's Mac is not running: a queued ping shows "waiting". */
   offline?: boolean
+  /** No Mac of theirs came on in time: it will not arrive. */
+  undelivered?: boolean
   dueAt: number | null
   repeat?: Repeat
   status: Status
@@ -59,12 +61,13 @@ export const REPEAT_OPTIONS: { value: Repeat | ''; label: string }[] = [
 ]
 
 /** What the status cell shows. "typing" is not a server status, it wins while typingUntil is ahead. */
-export type Kind = 'queued' | 'waiting' | 'popped' | 'seen' | 'typing' | 'replied' | 'done' | 'snoozed'
-export const KINDS: Kind[] = ['queued', 'waiting', 'popped', 'seen', 'typing', 'replied', 'done', 'snoozed']
+export type Kind = 'queued' | 'waiting' | 'lost' | 'popped' | 'seen' | 'typing' | 'replied' | 'done' | 'snoozed'
+export const KINDS: Kind[] = ['queued', 'waiting', 'lost', 'popped', 'seen', 'typing', 'replied', 'done', 'snoozed']
 
 export const ICONS: Record<Exclude<Kind, 'typing'>, string> = {
   queued: 'send',
   waiting: 'clock',
+  lost: 'alert',
   popped: 'bell',
   seen: 'eye',
   replied: 'reply',
@@ -72,8 +75,10 @@ export const ICONS: Record<Exclude<Kind, 'typing'>, string> = {
   snoozed: 'snooze',
 }
 
-export function kindOf(row: Pick<Row, 'status' | 'typingUntil' | 'offline'>, now: number): Kind {
+export function kindOf(row: Pick<Row, 'status' | 'typingUntil' | 'offline' | 'undelivered'>, now: number): Kind {
   if (row.status !== 'done' && row.typingUntil !== undefined && row.typingUntil > now) return 'typing'
+  // Their Mac stayed off for a week after it was due: it will not arrive, say so instead of vanishing.
+  if (row.status === 'queued' && row.undelivered) return 'lost'
   // The server says queued until a Mac picks it up; with the Mac off it simply waits.
   if (row.status === 'queued' && row.offline) return 'waiting'
   return row.status
@@ -86,6 +91,8 @@ export function wordFor(kind: Kind, row: Pick<Row, 'dueAt' | 'snoozedUntil'>, no
       return 'sending'
     case 'waiting':
       return row.dueAt === null ? 'waiting' : dueLabel(row.dueAt, now)
+    case 'lost':
+      return 'not delivered'
     case 'popped':
       return 'popped up'
     case 'seen':
@@ -106,5 +113,6 @@ export function spokenFor(kind: Kind, row: Pick<Row, 'dueAt' | 'snoozedUntil'>, 
   const word = wordFor(kind, row, now)
   if (kind === 'waiting' && row.dueAt !== null) return `waiting, ${word}`
   if (kind === 'snoozed') return `snoozed, ${word}`
+  if (kind === 'lost') return "not delivered, their Mac stayed off"
   return word
 }
