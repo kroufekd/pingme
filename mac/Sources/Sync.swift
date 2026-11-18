@@ -222,6 +222,19 @@ final class SyncEngine {
         return r.map { ($0, t) }
     }
 
+    /// The server's rows for these sent pings (at most 50).
+    func sent(refs: [String]) async -> Result<[SentRow], ApiError> {
+        guard let token = identity?.token else { return .failure(.unauthorized) }
+        let r = await api.sent(token: token, refs: Array(refs.prefix(50)))
+        if case .failure(.unauthorized) = r { unauthorized(token) }
+        return r.map(\.rows)
+    }
+
+    func openReply(_ row: SentRow) -> String? {
+        guard let key else { return nil }
+        return Net.open(row.reply, kind: .reply, row: row, key: key)
+    }
+
     func invites() async -> Result<[Invite], ApiError> {
         guard let token = identity?.token else { return .failure(.unauthorized) }
         let r = await api.invites(token: token)

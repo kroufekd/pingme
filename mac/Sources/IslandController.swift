@@ -489,6 +489,7 @@ final class IslandController {
             self.model.composeBusy = false
             switch r {
             case .success(let sent):
+                ReplyWatch.add(sent.ref)
                 let online = sent.target.online
                 self.model.composeNote = due != nil ? "Sent. \(first) sees it at the time you picked."
                     : online ? "Sent to \(first)." : "Sent. \(first) sees it when their Mac is back."

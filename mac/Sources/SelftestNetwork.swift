@@ -83,6 +83,22 @@ extension Selftest {
                 ContactNews.diff(after, known: known).map(\.text) == ["Anna can get pings now.", "Cyril joined pingme."])
         c.check("news: losing a Mac is not news", ContactNews.diff([person("ben", false)], known: known).isEmpty)
 
+        // Replies to island pings: asked by ref; a reply is news once, then the ref leaves the list.
+        func sentRow(_ ref: String, status: String, reply: Bool) -> SentRow {
+            SentRow(ref: ref, fromUserId: "me", toUserId: "u_m", toName: "Michal Novak", status: status, statusAt: 1,
+                    replyAt: reply ? 5 : nil)
+        }
+        let watch: ReplyWatch.Watch = ["r1": 1000, "r2": 1000, "r3": 1000, "r4": 1000]
+        let rows = [sentRow("r1", status: "replied", reply: true), sentRow("r2", status: "seen", reply: false),
+                    sentRow("r3", status: "done", reply: false)]
+        let step = ReplyWatch.step(rows, watch: watch, now: 200_000, open: { $0.ref == "r1" ? "Yes, at 12" : nil })
+        c.check("replies: a reply is news", step.news == [ReplyWatch.News(ref: "r1", name: "Michal Novak", text: "Yes, at 12")])
+        c.check("replies: still waiting stays, replied, done and gone leave", step.watch == ["r2": 1000])
+        let fresh = ReplyWatch.step([], watch: ["r9": 199_000], now: 200_000, open: { _ in nil })
+        c.check("replies: a ping just sent is kept while the server catches up", fresh.watch == ["r9": 199_000])
+        let stale = ReplyWatch.step([sentRow("r2", status: "seen", reply: false)], watch: ["r2": 0], now: ReplyWatch.maxAge + 1, open: { _ in nil })
+        c.check("replies: too old leaves", stale.watch.isEmpty)
+
         // Pairing secrets.
         c.check("secretHash is hex sha256 of the string",
                 Net.secretHash("abc_DEF-123") == "5cd61b34b7c95370d31492c24a6772572089c480cf5c48fcc1b4484a5a90e0f3")

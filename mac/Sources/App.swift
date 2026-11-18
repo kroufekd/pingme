@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var tickTimer: Timer?
     /// The contact list is checked this often for people who joined or connected a Mac.
     private var contactsCheckedAt = Date.distantPast
+    private var repliesCheckedAt = Date.distantPast
     private var lastStatus = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -107,6 +108,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !news.isEmpty { tick() }
     }
 
+    /// Replies to pings sent from the island: asked by id, only while some still wait for one.
+    private func checkReplies() async {
+        let watch = ReplyWatch.load()
+        guard !watch.isEmpty, case .success(let rows) = await sync.sent(refs: Array(watch.keys)) else { return }
+        let r = ReplyWatch.step(rows, watch: ReplyWatch.load(), now: Date().ms, open: sync.openReply)
+        ReplyWatch.save(r.watch)
+        for n in r.news { store.notice(id: "reply-\(n.ref)", title: n.text, from: "\(Fmt.firstName(n.name)) replied") }
+        if !r.news.isEmpty { tick() }
+    }
+
     /// "Try again" on the island: read the key once more; if macOS still refuses, restart pingme
     /// (after a rebuild only a fresh process gets the prompt). After that restart it is "stuck".
     private func retryKey() {
@@ -154,6 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         feed.use(token: nil)
         try? IdentityStore.delete()
         ContactNews.forget()
+        ReplyWatch.forget()
         island.paired = false
         store.syncError = nil
         updateStatusItem()
@@ -175,6 +187,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if sync.paired, Date().timeIntervalSince(contactsCheckedAt) > 600 {
             contactsCheckedAt = Date()
             Task { _ = await sync.loadContacts() }
+        }
+        if sync.paired, !presence.quiet(at: Date()), Date().timeIntervalSince(repliesCheckedAt) > 120 {
+            repliesCheckedAt = Date()
+            Task { await checkReplies() }
         }
         _ = bridge.scan(into: store)
         triage.pump(store)
