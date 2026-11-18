@@ -2693,6 +2693,123 @@ body vite-error-overlay {
     cursor: progress;
     opacity: 0.7;
   }
+  /* ---- People: next to Devices, same row and same kind of panel ---- */
+  .cn-side {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .cn-side .cn-b.dv-b {
+    margin-left: 0;
+  }
+  .cn-side .cn-b.dv-b:not(:last-child) {
+    margin-right: 0;
+  }
+  .pp-card {
+    width: min(100%, 460px);
+  }
+  .pp-wait {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(27, 25, 20, 0.1);
+  }
+  .pp-until {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-inv {
+    margin-top: 4px;
+    padding: 10px 0 6px;
+    border-top: 1px solid rgba(27, 25, 20, 0.1);
+  }
+  .pp-form {
+    display: grid;
+    gap: 8px;
+  }
+  .pp-l {
+    color: var(--ink-2);
+    font-size: 15px;
+  }
+  .pp-row {
+    display: flex;
+    gap: 8px;
+  }
+  .pp-in {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--cream);
+    font-size: 16px;
+  }
+  .pp-in::placeholder {
+    color: var(--quiet);
+  }
+  .chip.pp-go {
+    flex: none;
+    background: var(--ink);
+    color: var(--cream);
+    cursor: pointer;
+    transition:
+      background 0.25s var(--ease),
+      transform 0.45s var(--spring);
+  }
+  .chip.pp-go:active {
+    transform: scale(0.96);
+  }
+  .chip.pp-go:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+  .chip.pp-go.ok {
+    background: var(--g-ink);
+  }
+  .chip.pp-ghost {
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .chip.pp-ghost:hover {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .pp-new {
+    display: grid;
+    gap: 8px;
+  }
+  .pp-new-h {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: 15px;
+  }
+  .pp-new-h b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  /* The link itself: selectable, wraps anywhere, so a long token never pushes the page sideways. */
+  .pp-url {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 11px;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .pp-new-a {
+    display: flex;
+    gap: 8px;
+  }
+  .pp-once {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: 14px;
+  }
+  .pp-inv .ac-note:not(:empty) {
+    margin-top: 6px;
+  }
   @media (max-width: 440px) {
     /* One row with "Connect your agent": the toggle keeps its icon and count (its label says the rest). */
     .cn-bar {
@@ -2701,12 +2818,20 @@ body vite-error-overlay {
     .dv-b-t {
       display: none;
     }
+    .cn-bar .cn-b:not(.dv-b) {
+      flex: 0 1 auto;
+      min-width: 0;
+    }
     .dv-row {
       grid-template-columns: 22px minmax(0, 1fr) auto 44px;
     }
     .dv-st.on {
       font-size: 0;
       gap: 0;
+    }
+    /* An email in the status column must not take the name's room. */
+    .pp-until {
+      max-width: 112px;
     }
   }
 

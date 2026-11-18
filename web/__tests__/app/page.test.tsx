@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { NOTIFY_ASK, NOTIFY_ON, REPLIED } from '@/components/app/reply-alerts'
 import { NOT_DELIVERED } from '@/components/app/task-list'
+import { inviterLabel } from '@/components/app/sign-in'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetDeviceKey } from '@/lib/device-key'
 import type { Contact, ContactsView, SentRow } from '@/lib/network'
@@ -29,6 +30,11 @@ vi.mock('convex/react', async () => {
       return h.queries[getFunctionName(ref)]
     },
     useMutation: (ref: never) => {
+      const name = getFunctionName(ref)
+      if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
+      return h.mutations[name]
+    },
+    useAction: (ref: never) => {
       const name = getFunctionName(ref)
       if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
       return h.mutations[name]
@@ -719,7 +725,7 @@ describe('validation', () => {
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Ping' })
     const forms = Array.from(view.container.querySelectorAll('form'))
-    expect(forms).toHaveLength(3)
+    expect(forms).toHaveLength(4)
     for (const form of forms) expect(form.noValidate).toBe(true)
     expect(view.container.querySelectorAll('[required], [pattern]')).toHaveLength(0)
     expect(screen.getByLabelText('Email', { selector: 'input' })).toHaveAttribute('type', 'email')
@@ -900,6 +906,20 @@ describe('new people', () => {
     render(<App />)
     expect(await screen.findByText('Viki invited you to pingme.')).toBeInTheDocument()
     expect(screen.getByText(/right at the top of the Mac screen/)).toBeInTheDocument()
+  })
+
+  it("the invite names the inviter's email, which nobody can rename", async () => {
+    window.history.replaceState(null, '', '/?i=tok7')
+    h.queries['inviteLinks:check'] = { ok: true, name: 'Franta', inviterName: 'Viki', inviterEmail: 'viki@example.com' }
+    render(<App />)
+    expect(await screen.findByText('Viki (viki@example.com) invited you to pingme.')).toBeInTheDocument()
+  })
+
+  it('a name that is only the start of the email is not said twice', () => {
+    expect(inviterLabel('viki', 'viki@example.com')).toBe('viki@example.com')
+    expect(inviterLabel(undefined, 'viki@example.com')).toBe('viki@example.com')
+    expect(inviterLabel('Viki', undefined)).toBe('Viki')
+    expect(inviterLabel(undefined, undefined)).toBeUndefined()
   })
 
   it('a dead invite link says so instead of doing nothing', async () => {

@@ -448,7 +448,12 @@ describe("invites and contacts", () => {
     if (!made.ok) throw new Error(made.error)
     expect(made.url).toMatch(/^https:\/\/example\.test\/\?i=[A-Za-z0-9_-]{43}$/)
     const token = new URL(made.url).searchParams.get("i")!
-    expect(await t.query(api.inviteLinks.check, { token })).toEqual({ ok: true, name: "Viki", inviterName: "Dominik" })
+    expect(await t.query(api.inviteLinks.check, { token })).toEqual({
+      ok: true,
+      name: "Viki",
+      inviterName: "Dominik",
+      inviterEmail: "dominik@example.com",
+    })
     expect(await D.as.query(api.inviteLinks.mine, {})).toEqual([
       { inviteId: made.inviteId, name: "Viki", email: null, createdAt: expect.any(Number), expiresAt: made.expiresAt },
     ])
@@ -1184,7 +1189,12 @@ describe("migration to the network", () => {
     expect(await O.query(api.inviteLinks.mine, {})).toEqual([
       { inviteId: expect.any(String), name: "Pending", email: null, createdAt: expect.any(Number), expiresAt: expect.any(Number) },
     ])
-    expect(await t.query(api.inviteLinks.check, { token: pendingToken })).toEqual({ ok: true, name: "Pending", inviterName: "Dominik" })
+    expect(await t.query(api.inviteLinks.check, { token: pendingToken })).toEqual({
+      ok: true,
+      name: "Pending",
+      inviterName: "Dominik",
+      inviterEmail: OWNER,
+    })
 
     const tables = ["users", "contacts", "senders", "inviteLinks", "invites", "devices", "messages"] as const
     const snapshot = async () => Promise.all(tables.map((x) => count(t, x)))

@@ -2,10 +2,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NOTICE_MS, newMacs } from '@/components/app/devices'
 import { resetDeviceKey } from '@/lib/device-key'
-import type { ContactsView, MyDevice } from '@/lib/network'
+import type { Contact, ContactsView, MyDevice } from '@/lib/network'
 import { resetVault, vaultGet, vaultSet } from '@/lib/vault'
 import { setLeaving } from '@/lib/forget'
 import { RENAME, SAVE, SIGN_OUT, SIGN_OUT_SURE, NAME_LABEL } from '@/components/app/account'
+import { COPIED, COPY_LINK, CREATE_ERRORS, CREATE_LINK, INVITE, LINK_ONCE, PEOPLE, TAKE_BACK, WAITING } from '@/components/app/people-list'
 import { DOMINIK, ME, WEB, contact, contactsView, keys } from './net-fixtures'
 
 // Pair phishing regression, the web side: every device on the account is visible and removable,
@@ -25,6 +26,11 @@ vi.mock('convex/react', async () => {
     useConvexAuth: () => h.auth,
     useQuery: (ref: never, args: unknown) => (args === 'skip' ? undefined : h.queries[getFunctionName(ref)]),
     useMutation: (ref: never) => {
+      const name = getFunctionName(ref)
+      if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
+      return h.mutations[name]
+    },
+    useAction: (ref: never) => {
       const name = getFunctionName(ref)
       if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
       return h.mutations[name]
@@ -240,5 +246,100 @@ describe('your account', () => {
     view.rerender(<App />)
     await waitFor(() => expect(mutation('devices:registerWeb')).toHaveBeenCalledTimes(2))
     expect(await vaultGet('deviceKey')).toBeDefined()
+  })
+})
+
+describe('people', () => {
+  function withPeople(contacts: Contact[], invites: unknown[] = []) {
+    member([browser(), dev({ deviceId: 'mac-me', name: 'Vikin Mac' })])
+    const view = h.queries['contacts:list'] as Extract<ContactsView, { status: 'member' }>
+    h.queries['contacts:list'] = { ...view, contacts }
+    h.queries['inviteLinks:mine'] = invites
+    h.results['contacts:remove'] = { ok: true }
+    h.results['inviteLinks:revoke'] = true
+  }
+
+  it('lists contacts, reachable first, and removing one takes two clicks', async () => {
+    withPeople([
+      contact({ userId: 'u-zed', name: 'Zdeněk' }),
+      contact({ userId: 'u-off', name: 'Adam', macLastSeen: Date.now() - 3 * DAY }, K.vikiMac),
+      contact({ userId: DOMINIK, name: 'Dominik' }, K.dominikMac),
+    ])
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: /^People/ })
+    expect(toggle).toHaveAccessibleName('People 3, 1 online')
+    // In the same row as Devices, next to it.
+    expect(toggle.closest('.cn-bar')).toContainElement(screen.getByRole('button', { name: /^Devices/ }))
+    fireEvent.click(toggle)
+    const list = screen.getByRole('list', { name: PEOPLE })
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows.map((r) => r.querySelector('.dv-name')?.textContent)).toEqual(['Dominik', 'Adam', 'Zdeněk'])
+    expect(within(rows[0]).getByText('Online')).toBeInTheDocument()
+    expect(within(rows[1]).getByText(/^Seen /)).toBeInTheDocument()
+    expect(within(rows[2]).getByText('No Mac app')).toBeInTheDocument()
+
+    // One drawer at a time: Devices closes People.
+    fireEvent.click(screen.getByRole('button', { name: /^Devices/ }))
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+
+    const remove = within(list).getByRole('button', { name: 'Remove Adam' })
+    fireEvent.click(remove)
+    expect(mutation('contacts:remove')).not.toHaveBeenCalled()
+    expect(remove).toHaveAccessibleName('Confirm: Remove Adam')
+    fireEvent.click(remove)
+    await waitFor(() => expect(mutation('contacts:remove')).toHaveBeenCalledWith({ userId: 'u-off' }))
+    expect(mutation('contacts:remove')).toHaveBeenCalledTimes(1)
+  })
+
+  it('makes an invite link, shows it once and never stores it', async () => {
+    withPeople([contact({ userId: DOMINIK, name: 'Dominik' }, K.dominikMac)])
+    const url = 'https://pingme.example/?i=secret-token'
+    h.results['inviteLinks:create'] = { ok: true, inviteId: 'inv1', url, expiresAt: Date.now() + 7 * DAY }
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /^People/ }))
+
+    // An empty name never reaches the server.
+    fireEvent.click(screen.getByRole('button', { name: CREATE_LINK }))
+    expect(screen.getByText(CREATE_ERRORS['bad-name'])).toBeInTheDocument()
+    expect(mutation('inviteLinks:create')).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByRole('textbox', { name: INVITE }), { target: { value: '  Viki ' } })
+    fireEvent.click(screen.getByRole('button', { name: CREATE_LINK }))
+    await waitFor(() => expect(mutation('inviteLinks:create')).toHaveBeenCalledWith({ name: 'Viki' }))
+    expect(await screen.findByText(url)).toBeInTheDocument()
+    expect(screen.getByText(LINK_ONCE)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: COPY_LINK }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(url))
+    expect(await screen.findByRole('button', { name: COPIED })).toBeInTheDocument()
+    // A bearer link: nothing of it lands in storage.
+    expect(JSON.stringify({ ...localStorage })).not.toContain('secret-token')
+  })
+
+  it('says why a link was not made', async () => {
+    withPeople([])
+    h.results['inviteLinks:create'] = { ok: false, error: 'too-many-invites' }
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /^People/ }))
+    expect(screen.getByText(/No contacts yet/)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: INVITE }), { target: { value: 'Viki' } })
+    fireEvent.click(screen.getByRole('button', { name: CREATE_LINK }))
+    expect(await screen.findByText(CREATE_ERRORS['too-many-invites'])).toBeInTheDocument()
+  })
+
+  it('lists links nobody used yet; taking one back takes two clicks', async () => {
+    withPeople([], [{ inviteId: 'inv9', name: 'Michal', email: null, createdAt: Date.now() - DAY, expiresAt: Date.now() + 6 * DAY }])
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /^People/ }))
+    const waiting = screen.getByRole('list', { name: WAITING })
+    expect(within(waiting).getByText('Michal')).toBeInTheDocument()
+    expect(within(waiting).getByText(/^Until /)).toBeInTheDocument()
+    const back = within(waiting).getByRole('button', { name: `${TAKE_BACK} the link for Michal` })
+    fireEvent.click(back)
+    expect(mutation('inviteLinks:revoke')).not.toHaveBeenCalled()
+    fireEvent.click(back)
+    await waitFor(() => expect(mutation('inviteLinks:revoke')).toHaveBeenCalledWith({ inviteId: 'inv9' }))
   })
 })

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { clearInvite, loadInvite, loadOtpEmail, saveOtpEmail } from '@/lib/invite'
 import { isOnline } from '@/lib/network'
-import type { ContactsView, MyDevice } from '@/lib/network'
+import type { Contact, ContactsView, MyDevice } from '@/lib/network'
 import type { Me } from '@/lib/tasks'
 import { useNow } from '@/lib/time'
 import { forgetBrowser, setLeaving } from '@/lib/forget'
@@ -12,6 +12,7 @@ import { Account } from './account'
 import { ConnectAgent } from './connect'
 import { Icon } from './icon'
 import { NewMacNotice, useDeviceList } from './devices'
+import { usePeopleList } from './people-list'
 import { NotifyOffer, useReplyAlerts } from './reply-alerts'
 import { ContactNews, NoMacNotice } from './notices'
 import { Onboarding, needsOnboarding } from './onboarding'
@@ -26,6 +27,7 @@ import { useDevice, useSent } from './use-network'
 
 type Phase = 'loading' | 'email' | 'code' | 'form'
 const NO_DEVICES: MyDevice[] = []
+const NO_CONTACTS: Contact[] = []
 
 const HINT_NO_CODE = "Couldn't send a code to this email."
 const HINT_DEAD_LINK = 'No invite for this email. Ask for a new link.'
@@ -82,7 +84,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
     }
   }, [check, forgetInvite])
   const welcome: Welcome | null = check?.ok
-    ? { kind: 'invited', inviter: check.inviterName }
+    ? { kind: 'invited', inviter: check.inviterName, inviterEmail: check.inviterEmail }
     : deadInvite
       ? { kind: 'dead' }
       : invite
@@ -153,8 +155,8 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const sent = useSent({ enabled: network, device, view: contacts, now })
   const contactList = contacts?.status === 'member' ? contacts.contacts : null
   const myDevices = contacts?.status === 'member' ? contacts.me.devices : null
-  // "Connect your agent" and "Devices" share one row and open one at a time.
-  const [drawer, setDrawer] = useState<'agent' | 'devices' | null>(null)
+  // "Connect your agent", "People" and "Devices" share one row and open one at a time.
+  const [drawer, setDrawer] = useState<'agent' | 'people' | 'devices' | null>(null)
   const revokeDevice = useMutation(api.devices.revoke)
   // Signing out forgets this browser too: its device on the account, its key and what it kept.
   const signOutHere = useCallback(async () => {
@@ -171,6 +173,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   }, [device.deviceId, revokeDevice, signOut])
   const account = me?.status === 'member' ? <Account name={me.name} email={me.email} onSignOut={signOutHere} /> : undefined
   const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null), account)
+  const peopleList = usePeopleList(contactList ?? NO_CONTACTS, now, drawer === 'people', (o) => setDrawer(o ? 'people' : null), contactList !== null)
   const meView = contacts?.status === 'member' ? contacts.me : null
   const people: Person[] | null = useMemo(() => {
     if (!contactList || !meView) return null
@@ -297,8 +300,22 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
         <ConnectAgent
           open={drawer === 'agent'}
           onOpenChange={(o) => setDrawer(o ? 'agent' : null)}
-          side={myDevices && deviceList.toggle}
-          below={myDevices && deviceList.panel}
+          side={
+            myDevices && (
+              <span className="cn-side">
+                {peopleList.toggle}
+                {deviceList.toggle}
+              </span>
+            )
+          }
+          below={
+            myDevices && (
+              <>
+                {peopleList.panel}
+                {deviceList.panel}
+              </>
+            )
+          }
         />
       )}
       {/* Once per account, after the contacts are known. The text is end-to-end encrypted. */}
