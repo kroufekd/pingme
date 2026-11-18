@@ -54,6 +54,8 @@ cat > "$PLIST" <<PL
 PL
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 echo "Installed and started: $DEST"
+# Signed ad hoc, so every install is a new app to the Keychain. Denying leaves pingme without its key.
+echo "macOS may ask whether pingme can use its key in Keychain: click Always Allow. Each reinstall asks again."
 
 # Local MCP server "pingme" for the coding agents that exist here. An existing "pingme" entry is replaced
 # only when it already points at this app; one that points elsewhere belongs to someone else and stays.

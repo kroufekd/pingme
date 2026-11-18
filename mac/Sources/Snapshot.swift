@@ -18,7 +18,7 @@ enum SnapshotState: String, CaseIterable {
     case agentDone = "agent-done", agentReply = "agent-reply", agentTriage = "agent-triage"
     // The network (phase 2).
     case peopleDetail = "people-detail", peopleInvited = "people-invited", peopleEmpty = "people-empty"
-    case pair, pairing, pairFailed = "pair-failed", pairDone = "pair-done"
+    case pair, pairing, pairFailed = "pair-failed", pairDone = "pair-done", keyLocked = "key-locked"
     case taskUnreadable = "task-unreadable", taskPlain = "task-plain"
 
     /// Height of the desktop slice, as in the design (`--h`).
@@ -29,7 +29,7 @@ enum SnapshotState: String, CaseIterable {
         case .waiting, .waitingHover: return 230
         case .people, .peopleHover, .peopleAdd, .peopleInvited: return 260
         case .peopleDetail: return 380
-        case .peopleEmpty, .pair, .pairing, .pairFailed, .pairDone: return 150
+        case .peopleEmpty, .pair, .pairing, .pairFailed, .pairDone, .keyLocked: return 150
         case .agentTriage: return 270
         case .agentDone, .agentReply: return 210
         default: return 180
@@ -203,9 +203,10 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             model.said = "Link copied, good for 7 days."
             model.saidOK = true
         }
-    case .pair, .pairing, .pairFailed, .pairDone:
+    case .pair, .pairing, .pairFailed, .pairDone, .keyLocked:
         model.mode = .pair
         model.shown = .pair
+        model.keyLocked = state == .keyLocked
         switch state {
         case .pairing: model.pair = .waiting("309365")
         case .pairFailed: model.pair = .failed("Expired, try again.")

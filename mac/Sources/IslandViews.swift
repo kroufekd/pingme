@@ -122,6 +122,8 @@ final class IslandModel: ObservableObject {
     @Published var busy = false
     // Pairing
     @Published var pair: Pairing.State = .idle
+    /// The Keychain refused this app its key (a rebuilt app, or Deny clicked). The pair state offers a retry.
+    @Published var keyLocked = false
     /// Snapshots only: which field draws focus and a caret ("reply", "title", "name").
     @Published var stillFocus: String?
 }
@@ -145,6 +147,8 @@ struct IslandActions {
     var removeContact: (String) -> Void = { _ in }
     var pair: () -> Void = {}
     var cancelPair: () -> Void = {}
+    /// Reads the key from the Keychain again; macOS asks once more.
+    var retryKey: () -> Void = {}
 }
 
 private struct StillKey: EnvironmentKey { static let defaultValue = false }
@@ -1489,6 +1493,17 @@ struct PairCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             switch model.pair {
+            case .idle where model.keyLocked, .failed where model.keyLocked:
+                HStack(spacing: 10) {
+                    Button(action: actions.retryKey) { Text("Try again") }
+                        .buttonStyle(PrimaryStyle())
+                        .accessibilityHint("macOS asks for the Keychain again")
+                    Text("macOS kept pingme's key locked. Click Always Allow when it asks.")
+                        .font(Geist.font(12))
+                        .foregroundStyle(Ink.on2)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             case .idle, .failed:
                 HStack(spacing: 10) {
                     Button(action: actions.pair) { Text("Connect this Mac") }
@@ -1553,6 +1568,7 @@ struct PairCard: View {
         .padding(.top, 6)
         .padding(.bottom, 2)
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.pair)
+        .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.keyLocked)
     }
 }
 

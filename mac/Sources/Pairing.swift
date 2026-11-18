@@ -77,7 +77,16 @@ final class Pairing {
         // Pairing again replaces this Mac's device. The old one would otherwise stay on the account,
         // never confirm a ping, and keep the person's inbox full until each ping expires.
         // Kept here across attempts: a failed one leaves only a fresh, tokenless key in the Keychain.
-        if case .success(let old?) = IdentityStore.load(), let t = old.token { replaced = t }
+        switch IdentityStore.load() {
+        case .success(let old?):
+            if let t = old.token { replaced = t }
+        case .failure(.denied):
+            // The old key is still there, only locked. Pairing now would leave that Mac on the account.
+            state = .failed(KeychainError.denied(0).message)
+            return
+        default:
+            break
+        }
         do {
             // A fresh key for every pairing. The private half is in the Keychain before anything leaves the Mac.
             try IdentityStore.save(identity)

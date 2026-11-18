@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.sync.noteLocalChange()
             self?.updateStatusItem()
         }
+        island.onRetryKey = { [weak self] in self?.retryKey() }
         sync.onSynced = { [weak self] in self?.tick() }
         sync.onUnauthorized = { [weak self] in self?.forgetDevice(show: true) }
         pairing.onPaired = { [weak self] id in self?.usePaired(id) }
@@ -80,6 +81,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Never treat this as "not paired": the key may still work after a restart. The menu says
             // what is wrong, and "Connect this Mac" there starts over only when the owner asks.
             store.syncError = e.message
+            if case .denied = e {
+                // Said on the island too, with a retry: the menu bar icon alone is easy to miss.
+                island.keyLocked = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island.open(.pair, user: false) }
+            }
+        }
+    }
+
+    /// "Try again" on the island: macOS asks for the Keychain once more.
+    private func retryKey() {
+        switch IdentityStore.load() {
+        case .success(let id?) where id.paired:
+            usePaired(id)
+            island.keyUnlocked()
+        case .success:
+            store.syncError = nil
+            island.keyLocked = false
+            updateStatusItem()
+        case .failure(.denied):
+            break
+        case .failure(let e):
+            store.syncError = e.message
+            island.keyLocked = false
+            updateStatusItem()
         }
     }
 

@@ -83,6 +83,12 @@ final class IslandController {
     private var peopleAt = Date.distantPast
     /// Something changed in the store: sync and refresh the menu bar.
     var onChange: (() -> Void)?
+    /// "Try again" on a locked Keychain.
+    var onRetryKey: (() -> Void)?
+    var keyLocked: Bool {
+        get { model.keyLocked }
+        set { model.keyLocked = newValue }
+    }
     /// This Mac is connected to an account. Without it the island offers "Connect this Mac"
     /// in place of people; local tasks and agent sessions work either way.
     var paired = false {
@@ -361,7 +367,14 @@ final class IslandController {
         toggleContact: { [weak self] id in self?.toggleContact(id) },
         removeContact: { [weak self] id in self?.removeContact(id) },
         pair: { [weak self] in self?.pairing.start() },
-        cancelPair: { [weak self] in self?.pairing.cancel() })
+        cancelPair: { [weak self] in self?.pairing.cancel() },
+        retryKey: { [weak self] in self?.onRetryKey?() })
+
+    /// The key came back after "Try again": the pair card has nothing left to say.
+    func keyUnlocked() {
+        keyLocked = false
+        if target == .pair { closeTool() }
+    }
 
     private func done(_ id: String) {
         store.markDone(id)
@@ -753,7 +766,9 @@ final class IslandController {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                // Pairing keeps polling while the island is folded; the owner is in the browser now.
+                // A waiting pairing stays open: the owner is clicking in the browser and needs the code
+                // in sight. Escape or Cancel still put it away.
+                if self.target == .pair, self.pairing.busy { return }
                 if [.compose, .waiting, .people, .pair].contains(self.target) { self.closeTool() }
             }
         }) { monitors.append(m) }
