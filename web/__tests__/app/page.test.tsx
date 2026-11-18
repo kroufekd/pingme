@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { NOTIFY_ASK, NOTIFY_ON, REPLIED } from '@/components/app/reply-alerts'
 import { NOT_DELIVERED } from '@/components/app/task-list'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetDeviceKey } from '@/lib/device-key'
@@ -597,6 +598,64 @@ describe('the sent list opens on this device', () => {
     fireEvent.click(sentToggle())
     expect(await screen.findByText('Za chvíli')).toBeInTheDocument()
     expect(mutation('messages:ackReply')).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('replies reach you outside the list', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    localStorage.removeItem('pingme.notify-asked')
+  })
+
+  it('counts unread replies in the tab title and notifies a new one only, while the tab is hidden', async () => {
+    const made: { title: string; body?: string }[] = []
+    class FakeNotification {
+      static permission = 'granted'
+      static requestPermission = vi.fn()
+      onclick: (() => void) | null = null
+      constructor(title: string, opts?: { body?: string }) {
+        made.push({ title, body: opts?.body })
+      }
+      close() {}
+    }
+    vi.stubGlobal('Notification', FakeNotification)
+    const old = await sentRow(K.me, { status: 'replied', replyText: 'Starší odpověď', replyAt: Date.now() - 60_000 })
+    member([old])
+    const view = render(<App />)
+    await waitFor(() => expect(document.title).toMatch(/^\(1\)/))
+    expect(made).toEqual([])
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    try {
+      const fresh = await sentRow(K.me, { status: 'replied', replyText: 'Jdu na to', replyAt: Date.now() })
+      member([fresh, old])
+      view.rerender(<App />)
+      await waitFor(() => expect(made).toEqual([{ title: REPLIED('Dominik'), body: 'Jdu na to' }]))
+      await waitFor(() => expect(document.title).toMatch(/^\(2\)/))
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    }
+  })
+
+  it('offers notifications once after the first ping, and asks the browser only on a click', async () => {
+    const requestPermission = vi.fn(async () => 'granted')
+    vi.stubGlobal('Notification', { permission: 'default', requestPermission })
+    member([await sentRow(K.me, { status: 'seen' })])
+    render(<App />)
+    const on = await screen.findByRole('button', { name: NOTIFY_ON })
+    expect(requestPermission).not.toHaveBeenCalled()
+    fireEvent.click(on)
+    expect(requestPermission).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('group', { name: NOTIFY_ASK })).toBeNull()
+    expect(localStorage.getItem('pingme.notify-asked')).not.toBeNull()
+  })
+
+  it('does not offer before anything was sent', async () => {
+    vi.stubGlobal('Notification', { permission: 'default', requestPermission: vi.fn() })
+    member([])
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Ping' })
+    expect(screen.queryByRole('group', { name: NOTIFY_ASK })).toBeNull()
   })
 })
 

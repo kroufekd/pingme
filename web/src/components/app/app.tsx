@@ -10,6 +10,7 @@ import { useNow } from '@/lib/time'
 import { ConnectAgent } from './connect'
 import { Icon } from './icon'
 import { NewMacNotice, useDeviceList } from './devices'
+import { NotifyOffer, useReplyAlerts } from './reply-alerts'
 import { ContactNews, NoMacNotice } from './notices'
 import { Onboarding, needsOnboarding } from './onboarding'
 import { PairPanel } from './pair'
@@ -227,6 +228,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const listReady = home && shown === 'form' && sent.loaded
   // The intro names who invited them (or their first contact) and waits for that, so no name flashes.
   const introName = me?.status === 'member' ? (me.inviterName ?? contactList?.[0]?.name) : undefined
+  useReplyAlerts(sent.rows, listReady)
   return (
     <main className="screen">
       <h1 className="vh">pingme</h1>
@@ -248,6 +250,8 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
         )}
         {home && shown === 'form' && contactList && <ContactNews contacts={contactList} />}
         {home && shown === 'form' && myDevices && !myDevices.some((d) => d.kind === 'mac') && <NoMacNotice onSetUp={() => setDrawer('agent')} />}
+        {/* Asked once, from a click, after the first ping went out. */}
+        <NotifyOffer show={listReady && sent.rows.length > 0} />
       </div>
       <div className="stage" data-phase={shown} aria-busy={waiting || busy || undefined}>
         <EmailPanel on={shown === 'email'} busy={busy || waiting} hint={emailHint} initialEmail={email} welcome={welcome} onSubmit={(a) => void sendCode(a)} />
