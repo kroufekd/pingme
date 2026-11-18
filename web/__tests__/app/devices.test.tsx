@@ -204,7 +204,7 @@ describe('your account', () => {
     localStorage.setItem('pingme.contacts-known', '{"people":{}}')
     localStorage.setItem('pingme.no-mac-later', '1')
     await vaultSet('replies', { r1: 'Jdu na to' })
-    render(<App />)
+    const view = render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /^Devices/ }))
     expect(screen.getByText('viki@example.com')).toBeInTheDocument()
 
@@ -230,5 +230,15 @@ describe('your account', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(mutation('devices:registerWeb')).toHaveBeenCalledTimes(1)
     expect(await vaultGet('deviceKey')).toBeUndefined()
+
+    // The session ends; the next sign-in in the same tab registers this browser with a new key.
+    h.auth.isAuthenticated = false
+    view.rerender(<App />)
+    await screen.findByRole('textbox', { name: /email/i })
+    h.auth.isAuthenticated = true
+    h.queries['messages:mine'] = { status: 'member', deviceActive: true, rows: [] }
+    view.rerender(<App />)
+    await waitFor(() => expect(mutation('devices:registerWeb')).toHaveBeenCalledTimes(2))
+    expect(await vaultGet('deviceKey')).toBeDefined()
   })
 })
