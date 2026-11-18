@@ -37,7 +37,7 @@ export type Row = {
 export type Me =
   | { status: 'signedOut' }
   | { status: 'notMember'; email: string }
-  | { status: 'member'; name: string; userId: string; senderId?: string; onboarded?: boolean; inviterName?: string }
+  | { status: 'member'; name: string; email?: string; userId: string; senderId?: string; onboarded?: boolean; inviterName?: string }
 
 export const URGENCIES: { value: Urgency; word: string; cls: string }[] = [
   { value: 'green', word: 'Can wait', cls: 'u-g' },

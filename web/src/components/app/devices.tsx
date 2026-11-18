@@ -1,5 +1,6 @@
 import { useMutation } from 'convex/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { api } from '@/lib/api'
 import { isOnline } from '@/lib/network'
 import type { MyDevice } from '@/lib/network'
@@ -113,7 +114,15 @@ const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Dat
  * as one device. Returns the toggle and the panel apart: the toggle sits at the right end of the
  * row with "Connect your agent" and the panel opens under that row, so it moves nothing above it.
  */
-export function useDeviceList(devices: MyDevice[], thisId: string | null, now: number, open: boolean, onOpenChange: (open: boolean) => void) {
+export function useDeviceList(
+  devices: MyDevice[],
+  thisId: string | null,
+  now: number,
+  open: boolean,
+  onOpenChange: (open: boolean) => void,
+  /** Who is signed in, at the bottom of the panel. */
+  account?: ReactNode,
+) {
   const revoke = useMutation(api.devices.revoke)
   // The first click arms the remove button, the second removes: one slip must not unpair a Mac.
   const [armed, setArmed] = useState<string | null>(null)
@@ -234,6 +243,11 @@ export function useDeviceList(devices: MyDevice[], thisId: string | null, now: n
                 {THIS}: <span className="dv-this-n">{self.name}</span>
               </span>
             </p>
+          )}
+          {account && (
+            <div className="rv-i" style={slot(Math.max(2, others.length + 1))}>
+              {account}
+            </div>
           )}
         </div>
       </div>

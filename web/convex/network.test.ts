@@ -462,6 +462,7 @@ describe("invites and contacts", () => {
     expect(await V.query(api.senders.me, {})).toEqual({
       status: "member",
       name: "Viki",
+      email: "viki@example.com",
       userId: vId,
       onboarded: false,
       inviterName: "Dominik",
@@ -862,6 +863,19 @@ describe("encrypted pings between members", () => {
   })
 })
 
+describe("your name", () => {
+  test("a member renames themselves, contacts see it, an empty name is refused, strangers cannot", async () => {
+    const t = setup()
+    const { D, V } = await network(t)
+    expect(await V.as.mutation(api.senders.rename, { name: "  Viktorie  " })).toBe(true)
+    expect(await V.as.query(api.senders.me, {})).toMatchObject({ name: "Viktorie", email: "viki@example.com" })
+    const list = await D.as.query(api.contacts.list, {})
+    expect(list.status === "member" && list.contacts.map((c) => c.name)).toEqual(["Viktorie"])
+    expect(await V.as.mutation(api.senders.rename, { name: "   " })).toBe(false)
+    expect(await t.mutation(api.senders.rename, { name: "Mallory" })).toBe(false)
+  })
+})
+
 describe("how long rows live", () => {
   test("a ping due later lives from its due time, then shows as not delivered; a reply keeps a done row a month", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
@@ -1162,7 +1176,7 @@ describe("migration to the network", () => {
     const first = await t.mutation(internal.migrations.migrateToNetwork, { ownerName: "Dominik" })
     expect(first).toEqual({ ok: true, ownerId, members: 1, contacts: 2, invites: 1 })
     const O = t.withIdentity({ subject: `${ownerId}|s` })
-    expect(await O.query(api.senders.me, {})).toEqual({ status: "member", name: "Dominik", userId: ownerId, onboarded: false })
+    expect(await O.query(api.senders.me, {})).toEqual({ status: "member", name: "Dominik", email: OWNER, userId: ownerId, onboarded: false })
     const oList = await O.query(api.contacts.list, {})
     expect(oList.status === "member" && oList.contacts.map((c) => c.name)).toEqual(["Anna", "Bara"])
     expect(await A.as.query(api.senders.me, {})).toMatchObject({ status: "member", inviterName: "Dominik" })
@@ -1186,7 +1200,7 @@ describe("migration to the network", () => {
     const P = t.withIdentity({ subject: `${pId}|s` })
     expect(await P.mutation(api.inviteLinks.claim, { token: pendingToken })).toEqual({ ok: true, name: "Pending" })
     expect(await t.run((ctx) => ctx.db.get(pending.senderId as Id<"senders">))).toBeNull()
-    expect(await P.query(api.senders.me, {})).toEqual({ status: "member", name: "Pending", userId: pId, onboarded: false, inviterName: "Dominik" })
+    expect(await P.query(api.senders.me, {})).toEqual({ status: "member", name: "Pending", email: "pending@example.com", userId: pId, onboarded: false, inviterName: "Dominik" })
     const pList = await P.query(api.contacts.list, {})
     expect(pList.status === "member" && pList.contacts.map((c) => c.userId)).toEqual([ownerId])
 

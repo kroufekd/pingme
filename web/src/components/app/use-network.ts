@@ -8,6 +8,7 @@ import type { ContactsView, MineView, SentRow } from '@/lib/network'
 import { newRef } from '@/lib/seal'
 import type { Kind } from '@/lib/seal'
 import type { Row } from '@/lib/tasks'
+import { REPLIES } from '@/lib/forget'
 import { vaultGet, vaultSet } from '@/lib/vault'
 import type { NewTask, SendResult } from './task-form'
 
@@ -67,7 +68,6 @@ export function useDevice(enabled: boolean) {
 }
 
 type Local = { ref: string; toUserId: string; row: Row }
-const REPLIES = 'replies'
 const MAX_KEPT = 200
 
 /** Not scheduled: dueAt is the send time. Only a real plan shows its time. */

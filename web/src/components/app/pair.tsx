@@ -10,6 +10,7 @@ export const PAIR_TITLE = 'Connect this Mac'
 export const PAIR_CODE = 'Code from your Mac'
 // A link and a code from a message are how someone else's Mac gets onto your account.
 export const PAIR_WARN = "Don't see this code on your Mac? Don't connect."
+export const PAIR_TO = 'This Mac joins'
 const DONE = 'Connected'
 const INVALID = 'This link has expired.'
 const FAILED = "That didn't work. Try again."
@@ -24,7 +25,7 @@ type Pairing = { status: 'signedOut' } | { status: 'notMember' } | { status: 'in
  * you, so a link someone sent you cannot add their Mac to your account. "Done" is latched here,
  * because the request turns "invalid" once it expires.
  */
-export function PairPanel({ on }: { on: boolean }) {
+export function PairPanel({ on, account }: { on: boolean; /** The account this Mac joins, said before the code is typed. */ account?: string }) {
   // undefined: still reading the address, null: no usable link in it.
   const [target, setTarget] = useState<Target | null | undefined>(undefined)
   const [done, setDone] = useState(false)
@@ -169,7 +170,12 @@ export function PairPanel({ on }: { on: boolean }) {
             {PAIR_TITLE}
           </button>
           <p className="pp-warn" id="u-pair-warn">
-            {PAIR_WARN}
+            {account && (
+              <>
+                {PAIR_TO} <b>{account}</b>.{' '}
+              </>
+            )}
+            <span>{PAIR_WARN}</span>
           </p>
         </form>
       ) : (

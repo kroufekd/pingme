@@ -1,5 +1,5 @@
 import { generateKeyPair } from './seal'
-import { vaultGet, vaultSet } from './vault'
+import { vaultDelete, vaultGet, vaultSet } from './vault'
 
 /** This browser's device key. Raw X25519 halves as base64, exactly what seal.ts takes. */
 export type DeviceKey = { publicKey: string; privateKey: string }
@@ -42,6 +42,12 @@ export function loadDeviceKey(): Promise<DeviceKey> {
 /** Tests only. */
 export function resetDeviceKey() {
   loading = null
+}
+
+/** Signing out: this browser's key is gone, the next account gets a new one. */
+export async function forgetDeviceKey() {
+  loading = null
+  await vaultDelete(KEY).catch(() => {})
 }
 
 /** A short device name for the device list: "Safari · iPhone". */

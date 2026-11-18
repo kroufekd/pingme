@@ -3,7 +3,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { NOTICE_MS, newMacs } from '@/components/app/devices'
 import { resetDeviceKey } from '@/lib/device-key'
 import type { ContactsView, MyDevice } from '@/lib/network'
-import { resetVault, vaultSet } from '@/lib/vault'
+import { resetVault, vaultGet, vaultSet } from '@/lib/vault'
+import { RENAME, SAVE, SIGN_OUT, SIGN_OUT_SURE, NAME_LABEL } from '@/components/app/account'
 import { DOMINIK, ME, WEB, contact, contactsView, keys } from './net-fixtures'
 
 // Pair phishing regression, the web side: every device on the account is visible and removable,
@@ -14,6 +15,7 @@ const h = vi.hoisted(() => ({
   queries: {} as Record<string, unknown>,
   mutations: {} as Record<string, ReturnType<typeof vi.fn>>,
   results: {} as Record<string, unknown>,
+  signOut: vi.fn(async () => {}),
 }))
 
 vi.mock('convex/react', async () => {
@@ -30,7 +32,7 @@ vi.mock('convex/react', async () => {
 })
 
 vi.mock('@convex-dev/auth/react', () => ({
-  useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn(async () => {}) }),
+  useAuthActions: () => ({ signIn: vi.fn(), signOut: h.signOut }),
 }))
 
 const { App } = await import('@/components/app/app')
@@ -182,5 +184,40 @@ describe('devices on the account', () => {
     // A browser the server does not list yet announces nothing.
     expect(newMacs(all, null, now, new Set())).toEqual([])
     expect(newMacs(all, 'unknown', now, new Set())).toEqual([])
+  })
+})
+
+describe('your account', () => {
+  it('says who is signed in, renames, and signing out forgets this browser', async () => {
+    member([browser()])
+    h.queries['senders:me'] = { status: 'member', name: 'Viki', email: 'viki@example.com', userId: ME, onboarded: true }
+    h.results['senders:rename'] = true
+    h.results['devices:revoke'] = true
+    h.signOut.mockClear()
+    localStorage.setItem('pingme.contacts-known', '{"people":{}}')
+    localStorage.setItem('pingme.no-mac-later', '1')
+    await vaultSet('replies', { r1: 'Jdu na to' })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Devices/ }))
+    expect(screen.getByText('viki@example.com')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: RENAME }))
+    const field = screen.getByRole('textbox', { name: NAME_LABEL })
+    expect(field).toHaveValue('Viki')
+    fireEvent.change(field, { target: { value: '  Viktorie ' } })
+    fireEvent.click(screen.getByRole('button', { name: SAVE }))
+    await waitFor(() => expect(h.mutations['senders:rename']).toHaveBeenCalledWith({ name: 'Viktorie' }))
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: NAME_LABEL })).toBeNull())
+
+    // One slip does not sign out: the first click only says what it will do.
+    fireEvent.click(screen.getByRole('button', { name: SIGN_OUT }))
+    expect(h.signOut).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: SIGN_OUT_SURE }))
+    await waitFor(() => expect(h.signOut).toHaveBeenCalledTimes(1))
+    expect(h.mutations['devices:revoke']).toHaveBeenCalledWith({ deviceId: WEB })
+    expect(localStorage.getItem('pingme.contacts-known')).toBeNull()
+    expect(localStorage.getItem('pingme.no-mac-later')).toBeNull()
+    expect(await vaultGet('replies')).toBeUndefined()
+    expect(await vaultGet('deviceKey')).toBeUndefined()
   })
 })

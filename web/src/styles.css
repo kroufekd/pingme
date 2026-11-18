@@ -2607,6 +2607,60 @@ body vite-error-overlay {
   .dv-this-n {
     color: var(--ink-2);
   }
+  /* ---- account: who is signed in, rename, sign out ---- */
+  .ac {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-top: 6px;
+    padding: 12px 0 4px;
+    border-top: 1px solid rgba(27, 25, 20, 0.1);
+  }
+  .ac-who {
+    display: flex;
+    flex: 1 1 200px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    min-width: 0;
+    margin: 0;
+    color: var(--ink-3);
+    font-size: 15px;
+  }
+  .ac-who b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .ac-mail {
+    overflow: hidden;
+    color: var(--ink-3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ac-act,
+  .ac-edit {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ac-edit {
+    flex: 1 1 100%;
+  }
+  .ac-in {
+    flex: 1 1 160px;
+    min-width: 0;
+    font-size: 16px;
+  }
+  .ac-note {
+    flex: 1 1 100%;
+    margin: 0;
+    color: var(--r-ink);
+    font-size: 14px;
+  }
+  .ac-note:empty {
+    display: none;
+  }
   /* Fixed slot: arming the button never moves the name or the status. */
   .dv-act {
     display: flex;

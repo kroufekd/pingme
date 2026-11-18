@@ -7,6 +7,8 @@ import { isOnline } from '@/lib/network'
 import type { ContactsView, MyDevice } from '@/lib/network'
 import type { Me } from '@/lib/tasks'
 import { useNow } from '@/lib/time'
+import { forgetBrowser } from '@/lib/forget'
+import { Account } from './account'
 import { ConnectAgent } from './connect'
 import { Icon } from './icon'
 import { NewMacNotice, useDeviceList } from './devices'
@@ -153,7 +155,16 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const myDevices = contacts?.status === 'member' ? contacts.me.devices : null
   // "Connect your agent" and "Devices" share one row and open one at a time.
   const [drawer, setDrawer] = useState<'agent' | 'devices' | null>(null)
-  const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null))
+  const revokeDevice = useMutation(api.devices.revoke)
+  // Signing out forgets this browser too: its device on the account, its key and what it kept.
+  const signOutHere = useCallback(async () => {
+    if (device.deviceId) await revokeDevice({ deviceId: device.deviceId }).catch(() => {})
+    await forgetBrowser()
+    setDrawer(null)
+    await signOut()
+  }, [device.deviceId, revokeDevice, signOut])
+  const account = me?.status === 'member' ? <Account name={me.name} email={me.email} onSignOut={signOutHere} /> : undefined
+  const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null), account)
   const meView = contacts?.status === 'member' ? contacts.me : null
   const people: Person[] | null = useMemo(() => {
     if (!contactList || !meView) return null
@@ -272,7 +283,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
             }
           />
         ) : (
-          <PairPanel on={shown === 'form'} />
+          <PairPanel on={shown === 'form'} account={me?.status === 'member' ? (me.email ?? me.name) : undefined} />
         )}
       </div>
       {listReady && <SentList rows={sent.rows} keyOf={sent.keyOf} onAck={sent.onAck} open={listOpen} showWho={showWho} />}
