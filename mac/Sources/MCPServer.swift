@@ -16,6 +16,10 @@ enum MCPServer {
 
     Use it only when your human needs something from a contact, or asks you to ping someone. \
     Never for chatter, progress reports or tests.
+    Ping your own human (to="me") whenever you need them and they may not be looking: a decision, an approval, \
+    a login, an answer, or something only they can do. Never to report progress or that something is done. \
+    Write what you are working on and what you need from them, nothing else, for example: \
+    "Checkout fix ready: approve the merge?" Usually orange; red only when something breaks without them.
     - contacts: who you can ping and who is online now. A person without the Mac app cannot be pinged.
     - ping(to, text, urgency, forAgent?): one short message, at most 200 characters, in the contact's language. \
     urgency: green can wait, orange soon, red only when it truly cannot wait (it plays a sound and keeps nagging). \
@@ -145,7 +149,8 @@ enum MCPTools {
             "name": "ping",
             "title": "Ping a contact",
             "description": "Sends one short, end-to-end encrypted ping that pops up on the contact's Mac. "
-                + "Only when your human needs something from them. Returns an id for status and reply.",
+                + "Only when your human needs something from them, or to=\"me\" when you need your human. "
+                + "Returns an id for status and reply.",
             "inputSchema": [
                 "type": "object",
                 "properties": [

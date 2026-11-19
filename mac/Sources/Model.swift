@@ -480,8 +480,8 @@ final class TaskStore: ObservableObject {
 
     // MARK: Agent
 
-    /// A Claude Code session finished. One item per session: a later finish replaces the text and pops again.
-    /// A session finished. It waits up to `hold` seconds for its name and recap (`finishAgentSession`).
+    /// A session finished. It stays hidden up to `hold` seconds, until the recap says whether it waits on the
+    /// owner (`finishAgentSession`) or not (`dropAgentSession`). A later finish of the same session replaces it.
     func upsertAgentSession(session: String, project: String, text: String, hold: TimeInterval = 0) {
         let id = "agent-\(session)"
         let now = Date().ms + hold * 1000
@@ -511,6 +511,14 @@ final class TaskStore: ObservableObject {
             if let text { $0.title = text }
             $0.dueAt = min($0.dueAt, Date().ms)
         }
+        commit()
+    }
+
+    /// The session finished without waiting on the owner: it never pops. A newer finish of the same session wins.
+    func dropAgentSession(session: String, ifStill quick: String) {
+        let id = "agent-\(session)"
+        guard pending.first(where: { $0.id == id })?.title == quick else { return }
+        pending.removeAll { $0.id == id }
         commit()
     }
 

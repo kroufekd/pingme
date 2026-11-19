@@ -6,7 +6,7 @@ End-to-end encrypted and open source. Pretty Good Privacy, for you, me and our a
 
 - **People** ping you from the web. The ping drops into the island with its urgency (Can wait, Soon, Now) and you reply right there.
 - **Agents** (Claude Code, Codex, Cursor) ping you or your contacts through a local MCP server and read the reply when it comes.
-- **Sessions** (optional): when a Claude Code session finishes while you are away, the island tells you, and you can answer the session from the island.
+- **Sessions** (optional): when a Claude Code session finishes while you are away and waits on you (a question, an approval, a login), the island says what it needs, and you can answer the session from the island. A session that only reports stays quiet.
 
 Hosted instance: [pingme.macaly.app](https://pingme.macaly.app). It is invite only: ask someone who is in for a link.
 
@@ -48,7 +48,7 @@ cd pingme
 
 The installer builds the app, puts it in `~/Applications`, starts it at login and registers the `pingme` MCP server for Claude Code, Codex and Cursor, whichever it finds. It never replaces an MCP server named `pingme` that points somewhere else, and it changes nothing else.
 
-`./mac/install.sh --with-session-hook` also adds a Claude Code Stop hook: the island pings you when a session finishes, and your reply goes back into that session. It edits `~/.claude/settings.json` and leaves a backup next to it.
+`./mac/install.sh --with-session-hook` also adds a Claude Code Stop hook: the island pings you when a finished session waits on you, and your reply goes back into that session. It edits `~/.claude/settings.json` and leaves a backup next to it.
 
 Or let your agent do it. Paste this into Claude Code, Codex or Cursor:
 

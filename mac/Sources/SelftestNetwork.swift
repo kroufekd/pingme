@@ -454,6 +454,34 @@ extension Selftest {
                     .allSatisfy { MCPServer.instructions.contains($0) })
         let texts = [MCPServer.instructions, MCPServer.notConnected] + tools.compactMap { $0["description"] as? String }
         c.check("no em or en dashes in agent-facing text", texts.allSatisfy { !$0.contains("\u{2014}") && !$0.contains("\u{2013}") })
+        c.check("the agent pings its own human only when it needs them",
+                ["to=\"me\"", "whenever you need them", "Never to report progress", "what you need from them"]
+                    .allSatisfy { MCPServer.instructions.contains($0) })
+
+        // Session recaps: only a session that waits on the owner pops.
+        c.check("WAITS pops with its line", AgentBridge.parseRecap("WAITS: Fix is ready, merge it?")
+                == AgentBridge.Recap(waits: true, line: "Fix is ready, merge it?"))
+        c.check("DONE stays quiet", AgentBridge.parseRecap("DONE") == AgentBridge.Recap(waits: false, line: nil))
+        c.check("bold or lower case verdicts still parse", AgentBridge.parseRecap("**done**")?.waits == false
+                && AgentBridge.parseRecap("waits - Log in on the preview tab")?.line == "Log in on the preview tab")
+        c.check("a free sentence is no verdict", AgentBridge.parseRecap("The build is green") == nil)
+        c.check("without Haiku a closing question waits", AgentBridge.waitsOnYou("Hotovo.\n\n**Mám to mergnout?**"))
+        c.check("without Haiku a report does not", !AgentBridge.waitsOnYou("Hotovo, testy prošly.\nPR je ready."))
+        c.check("the fallback line is the question", AgentBridge.question("Done. Merge it now?") == "Merge it now?")
+        // The selftest runs on the main thread.
+        let sessions = MainActor.assumeIsolated { () -> [Bool] in
+            let rs = TaskStore(preview: [])
+            rs.upsertAgentSession(session: "s1", project: "pingme", text: "Done", hold: AgentBridge.recapWait)
+            let hidden = rs.due().isEmpty && rs.task("agent-s1") != nil
+            rs.dropAgentSession(session: "s1", ifStill: "Done")
+            let dropped = rs.task("agent-s1") == nil
+            rs.upsertAgentSession(session: "s2", project: "pingme", text: "Ready", hold: AgentBridge.recapWait)
+            rs.finishAgentSession(session: "s2", name: "Deploy", text: "Approve the publish?", ifStill: "Ready")
+            return [hidden, dropped, rs.due(at: Date().addingTimeInterval(1)).first?.title == "Approve the publish?"]
+        }
+        c.check("a finished session is hidden until its recap", sessions[0])
+        c.check("a report never reaches the island", sessions[1])
+        c.check("a session that waits pops now", sessions[2])
 
         // ping arguments.
         func valid(_ a: [String: Any]) -> MCPTools.PingArgs? { try? MCPTools.validatePing(a).get() }
