@@ -76,6 +76,8 @@ final class IslandModel: ObservableObject {
     @Published var mode: IslandMode = .closed
     /// What the content shows. Kept while the island folds away.
     @Published var shown: IslandMode = .compose
+    /// The island is opening out of the notch (not switching cards): the controls beside it fly out of the camera.
+    @Published var arriving = false
     @Published var metrics = IslandMetrics.fake
     @Published var height: CGFloat = 120
     @Published var now = Date()
@@ -209,6 +211,99 @@ private let earsTransition = AnyTransition.asymmetric(
     insertion: .opacity.combined(with: .scale(scale: 0.86)).animation(.spring(duration: 0.3, bounce: 0.1).delay(0.06)),
     removal: .opacity.combined(with: .scale(scale: 0.92)).animation(.easeIn(duration: 0.09)))
 
+// MARK: - Out of the camera
+
+/// The space the island lays its content out in. The camera sits at the top middle of it.
+let kIslandSpace = "island"
+
+/// The background grows alone this long before the first thing leaves the camera.
+let kFlyStart: Double = 0.12
+/// The gap between one thing and the next, and the most things that wait their turn.
+let kFlyStagger: Double = 0.035
+let kFlyMaxOrder = 6
+
+private struct ArrivedKey: EnvironmentKey { static let defaultValue = true }
+private struct OriginKey: EnvironmentKey { static let defaultValue = CGPoint.zero }
+private struct FrozenKey: EnvironmentKey { static let defaultValue: Double? = nil }
+extension EnvironmentValues {
+    /// False while the island is closed or has only started to open: everything waits in the camera.
+    var islandArrived: Bool {
+        get { self[ArrivedKey.self] }
+        set { self[ArrivedKey.self] = newValue }
+    }
+    /// The camera, in kIslandSpace.
+    var islandOrigin: CGPoint {
+        get { self[OriginKey.self] }
+        set { self[OriginKey.self] = newValue }
+    }
+    /// Snapshots only: one frozen moment of the flight, 0 in the camera, 1 in place.
+    var islandFrozen: Double? {
+        get { self[FrozenKey.self] }
+        set { self[FrozenKey.self] = newValue }
+    }
+}
+
+/// Where a thing is on its way: `travel` 1 is small in the camera, 0 is its own place. Each thing moves on its
+/// own straight line from the one point, so they spread out like a fan. Scale first, then the move, so the
+/// move is not scaled too. Render only: the layout never changes, so the island's height stays put.
+private struct FlyEffect: ViewModifier {
+    var travel: Double
+    var fade: Bool
+    var origin: CGPoint
+
+    func body(content: Content) -> some View {
+        let t = travel, o = origin
+        content
+            .visualEffect { c, g in
+                let f = g.frame(in: .named(kIslandSpace))
+                return c
+                    .scaleEffect(1 - 0.65 * t)
+                    .offset(x: (o.x - f.midX) * t, y: (o.y - f.midY) * t)
+            }
+            .opacity(fade ? 1 - t : 1)
+    }
+}
+
+/// The spring a thing arrives on: after the background, one short beat after the thing before it.
+func flySpring(_ order: Int, reduce: Bool) -> Animation {
+    reduce ? .easeOut(duration: 0.2)
+        : .spring(duration: 0.46, bounce: 0.12).delay(kFlyStart + Double(min(order, kFlyMaxOrder)) * kFlyStagger)
+}
+
+/// A thing that is already in the island when it opens: it waits in the camera and flies out once the
+/// island opens. Closing pulls everything back in at once, quickly.
+private struct FlyIn: ViewModifier {
+    let order: Int
+    @Environment(\.islandArrived) private var arrived
+    @Environment(\.islandOrigin) private var origin
+    @Environment(\.islandFrozen) private var frozen
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let p = frozen ?? (arrived ? 1 : 0)
+        content
+            // A frozen snapshot shows the paths, so it does not fade.
+            .modifier(FlyEffect(travel: reduceMotion ? 0 : 1 - p, fade: frozen == nil, origin: origin))
+            .animation(arrived ? flySpring(order, reduce: reduceMotion) : .easeIn(duration: 0.14), value: arrived)
+    }
+}
+
+/// The same flight for a thing that appears together with the island (the controls beside the notch).
+/// Only while the island is opening: a switch between cards keeps its plain fade.
+@MainActor
+func flyTransition(_ order: Int, origin: CGPoint, reduce: Bool) -> AnyTransition {
+    .asymmetric(
+        insertion: .modifier(active: FlyEffect(travel: reduce ? 0 : 1, fade: true, origin: origin),
+                             identity: FlyEffect(travel: 0, fade: true, origin: origin))
+            .animation(flySpring(order, reduce: reduce)),
+        removal: .opacity.animation(.easeIn(duration: 0.09)))
+}
+
+extension View {
+    /// Flies out of the camera when the island opens. `order`: 0 beside the notch, then top to bottom.
+    func flyIn(_ order: Int) -> some View { modifier(FlyIn(order: order)) }
+}
+
 // MARK: - Shape
 
 let kIslandEar: CGFloat = 10
@@ -260,22 +355,22 @@ struct IslandView: View {
         // Small outward curves where the island meets the menu bar, like the real notch. Only while open:
         // the closed window is exactly the notch wide.
         let ear: CGFloat = open ? kIslandEar : 0
-        let still = open || reduceMotion
         ZStack(alignment: .top) {
             content
                 .frame(width: kIslandWidth, alignment: .top)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
-                // The content comes out of the notch with the shape: from a little smaller and soft, to sharp.
-                .scaleEffect(still ? 1 : 0.88, anchor: .top)
-                .blur(radius: still ? 0 : 6)
+                // The background grows first; each thing then flies out of the camera on its own (flyIn).
                 .opacity(open ? 1 : 0)
-                .animation(open ? (reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.42, bounce: 0.08).delay(0.07))
-                                : .easeIn(duration: 0.12), value: open)
+                .animation(open ? .easeOut(duration: 0.1).delay(reduceMotion ? 0 : kFlyStart) : .easeIn(duration: 0.12), value: open)
                 .allowsHitTesting(open)
             EarsBar(model: model, actions: actions)
                 .frame(width: w, height: m.bar)
         }
+        // As wide as the open island in every state (the content keeps its width), so the camera is fixed.
+        .coordinateSpace(.named(kIslandSpace))
+        .environment(\.islandArrived, open)
+        .environment(\.islandOrigin, CGPoint(x: kIslandWidth / 2, y: m.bar / 2))
         .frame(width: w + 2 * ear, height: h, alignment: .top)
         .background {
             Color.black
@@ -386,6 +481,7 @@ struct EarsBar: View {
                 .foregroundStyle(Ink.urgency(t.level))
                 .frame(minHeight: 24)
                 .accessibilityElement(children: .combine)
+                .modifier(Arrive(model: model))
                 Spacer(minLength: 8)
                 Text(t.reply == nil ? Fmt.ago(t.showAt, now: model.now) : "")
                     .font(Geist.font(12, 500))
@@ -394,21 +490,36 @@ struct EarsBar: View {
                     .lineLimit(1)
                     .opacity(reveal ? 1 : 0)
                     .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: reveal)
+                    .modifier(Arrive(model: model))
             }
         case .compose:
-            listEar
+            listEar.modifier(Arrive(model: model))
             Spacer(minLength: 0)
-            ear(icon: "user", label: "People") { actions.switchTo(.people) }
+            ear(icon: "user", label: "People") { actions.switchTo(.people) }.modifier(Arrive(model: model))
         case .waiting:
-            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }
+            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }.modifier(Arrive(model: model))
             Spacer(minLength: 0)
-            ear(icon: "user", label: "People") { actions.switchTo(.people) }
+            ear(icon: "user", label: "People") { actions.switchTo(.people) }.modifier(Arrive(model: model))
         case .people, .pair:
-            listEar
+            listEar.modifier(Arrive(model: model))
             Spacer(minLength: 0)
-            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }
+            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }.modifier(Arrive(model: model))
         case .closed:
             EmptyView()
+        }
+    }
+
+    /// The controls beside the notch appear with the island, so they fly out of the camera as they appear;
+    /// a switch between cards while open keeps the plain fade.
+    private struct Arrive: ViewModifier {
+        @ObservedObject var model: IslandModel
+        @Environment(\.islandOrigin) private var origin
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        func body(content: Content) -> some View {
+            content
+                .flyIn(0)
+                .transition(model.arriving ? flyTransition(0, origin: origin, reduce: reduceMotion) : .opacity)
         }
     }
 
@@ -709,19 +820,22 @@ struct TaskCard: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .flyIn(1)
                 Button { actions.done(task.id) } label: { Icon(name: "check", size: 16, color: .black) }
                     .buttonStyle(RoundStyle(size: 32, grow: true))
                     .focused($focus, equals: .done)
                     .accessibilityLabel("Done")
+                    .flyIn(2)
             }
             .padding(.top, 6)
 
             if model.replyOpen && task.canReply {
                 replyStack
+                    .flyIn(3)
                     .transition(.opacity)
             } else {
-                if !model.sentNote.isEmpty && !hidden { note }
-                more
+                if !model.sentNote.isEmpty && !hidden { note.flyIn(3) }
+                more.flyIn(3)
             }
         }
         .animation(islandSpring(reduceMotion, 0.45), value: model.replyOpen)
@@ -900,6 +1014,7 @@ struct ComposeCard: View {
                           focus: $titleFocused, stillFocused: model.stillFocus == "title", onSubmit: actions.add)
                     .kerning(-0.15)
                     .accessibilityLabel(to == nil ? "Note to self" : placeholder)
+                    .flyIn(1)
                 if !pingable.isEmpty {
                     MenuPill(text: to.map { Fmt.firstName($0.name) } ?? "Me", icon: "user", a11y: "To",
                              items: [("Me", to == nil)] + pingable.map { c in
@@ -909,6 +1024,7 @@ struct ComposeCard: View {
                         model.focusRequest += 1
                     }
                     .help("Who gets it")
+                    .flyIn(2)
                 }
             }
             .frame(height: 32)
@@ -933,10 +1049,12 @@ struct ComposeCard: View {
                         .help(to == nil ? "Add task" : "Send ping")
                 }
                 .padding(.top, 6)
+                .flyIn(3)
                 .transition(.opacity)
                 if model.later {
                     LaterRow(model: model)
                         .padding(.top, 8)
+                        .flyIn(4)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
                 }
             }
@@ -947,6 +1065,7 @@ struct ComposeCard: View {
                     .lineLimit(2)
                     .padding(.top, 8)
                     .accessibilityAddTraits(.updatesFrequently)
+                    .flyIn(3)
             }
         }
         .onChange(of: model.newTitle) { _, _ in if !model.composeBusy && model.newTo != nil { model.composeNote = "" } }
@@ -1152,14 +1271,15 @@ struct WaitingCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if model.waitingRows.isEmpty {
-                QuietLine(text: "Nothing waiting.")
+                QuietLine(text: "Nothing waiting.").flyIn(1)
             } else {
-                ForEach(model.waitingRows.prefix(Self.maxRows), id: \.id) { t in
+                ForEach(Array(model.waitingRows.prefix(Self.maxRows).enumerated()), id: \.element.id) { i, t in
                     ListRow(id: t.id, model: model, focused: $focused, focusable: true) { lit in
                         WaitingRowContent(task: t, now: model.now, lit: lit)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(WaitingRowContent.label(t, now: model.now))
+                    .flyIn(1 + i)
                 }
                 if model.waitingRows.count > Self.maxRows {
                     Text("and \(model.waitingRows.count - Self.maxRows) more")
@@ -1167,6 +1287,7 @@ struct WaitingCard: View {
                         .foregroundStyle(Ink.on3)
                         .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
                         .padding(.leading, 18)
+                        .flyIn(1 + Self.maxRows)
                 }
             }
         }
@@ -1223,14 +1344,15 @@ struct PeopleCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var named: Bool { !model.personName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var rows: Int { max(1, model.contacts.count + model.invites.count) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 if model.contacts.isEmpty && model.invites.isEmpty {
-                    QuietLine(text: emptyText)
+                    QuietLine(text: emptyText).flyIn(1)
                 } else {
-                    ForEach(model.contacts) { c in
+                    ForEach(Array(model.contacts.enumerated()), id: \.element.id) { n, c in
                         let open = model.openContact == c.id
                         // An open contact is one card: its row and its detail on one soft background.
                         VStack(alignment: .leading, spacing: 0) {
@@ -1260,26 +1382,29 @@ struct PeopleCard: View {
                             }
                         }
                         .padding(.vertical, open ? 4 : 0)
+                        .flyIn(1 + n)
                     }
-                    ForEach(model.invites) { i in
+                    ForEach(Array(model.invites.enumerated()), id: \.element.id) { n, i in
                         ListRow(id: i.id, model: model, focused: $focused, focusable: false) { lit in
                             InviteRowContent(invite: i, lit: lit, onRemove: { actions.revokeInvite(i.id) }, focused: $focused)
                         }
+                        .flyIn(1 + model.contacts.count + n)
                     }
                 }
             }
             .padding(.top, 4)
             .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.openContact)
             if model.saidOK && !model.said.isEmpty {
-                saidNote
+                saidNote.flyIn(rows + 1)
             } else {
-                addRow
+                addRow.flyIn(rows + 1)
                 if !model.said.isEmpty {
                     Text(model.said)
                         .font(Geist.font(12))
                         .foregroundStyle(Ink.on2)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 6)
+                        .flyIn(rows + 2)
                 }
             }
         }
@@ -1628,6 +1753,7 @@ struct PairCard: View {
         }
         .padding(.top, 6)
         .padding(.bottom, 2)
+        .flyIn(1)
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.pair)
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.keyLock)
     }

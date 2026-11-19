@@ -229,6 +229,7 @@ private struct SnapshotDesktop: View {
     let state: SnapshotState
     let width: CGFloat
     var still = false
+    var fly: Double?
 
     var body: some View {
         let m = model.metrics
@@ -261,13 +262,15 @@ private struct SnapshotDesktop: View {
         .frame(width: width, height: state.deskHeight, alignment: .top)
         .clipped()
         .environment(\.islandStill, still)
+        .environment(\.islandFrozen, fly)
     }
 }
 
 @MainActor
 /// Default: SwiftUI ImageRenderer at 2x with stand-ins for AppKit controls. `appKit`: the real controls
 /// through NSView caching, at 1x. `real`: this Mac's own notch size instead of the design's.
-func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: Bool, real: Bool = false) -> Bool {
+/// `fly`: one frozen moment of the opening, 0 with everything in the camera, 1 in place, drawn without the fade.
+func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: Bool, real: Bool = false, fly: Double? = nil) -> Bool {
     _ = NSApplication.shared
     NSApp.appearance = NSAppearance(named: .darkAqua)
     Geist.register()
@@ -281,7 +284,7 @@ func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: B
     fill(model, state: state, now: model.now)
 
     let width: CGFloat = 560
-    let hosting = NSHostingView(rootView: SnapshotDesktop(model: model, state: state, width: width, still: !appKit))
+    let hosting = NSHostingView(rootView: SnapshotDesktop(model: model, state: state, width: width, still: !appKit, fly: fly))
     hosting.frame = NSRect(x: 0, y: 0, width: width, height: state.deskHeight)
     let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: .darkAqua)
@@ -291,7 +294,7 @@ func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: B
     hosting.layoutSubtreeIfNeeded()
     if !appKit {
         // SwiftUI's own renderer draws the shapes exactly; text fields and menus are stand-ins.
-        let r = ImageRenderer(content: SnapshotDesktop(model: model, state: state, width: width, still: true))
+        let r = ImageRenderer(content: SnapshotDesktop(model: model, state: state, width: width, still: true, fly: fly))
         r.scale = 2
         guard let cg = r.cgImage, let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil

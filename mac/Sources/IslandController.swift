@@ -315,7 +315,12 @@ final class IslandController {
             // Start closed, then open a moment later so the growth is animated.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
                 guard let self, self.target == mode else { return }
+                self.model.arriving = true
                 self.model.mode = mode
+                // Long after the ears appeared; a card switch from then on keeps its plain fade.
+                DispatchQueue.main.asyncAfter(deadline: .now() + kIslandSettle) { [weak self] in
+                    self?.model.arriving = false
+                }
             }
         } else {
             model.mode = mode
@@ -334,6 +339,7 @@ final class IslandController {
         frameGeneration += 1
         let g = frameGeneration
         target = .closed
+        model.arriving = false
         model.mode = .closed
         model.hover = false
         model.taskFocused = false
