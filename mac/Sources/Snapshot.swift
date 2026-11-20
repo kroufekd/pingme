@@ -10,7 +10,7 @@ enum SnapshotState: String, CaseIterable {
     case taskGreen = "task-green", taskOrange = "task-orange", taskRed = "task-red", taskAgent = "task-agent"
     case taskHover = "task-hover"
     case replyOpen = "reply-open", replyTyping = "reply-typing", replySent = "reply-sent"
-    case newEmpty = "new-empty", new, newLater = "new-later"
+    case newEmpty = "new-empty", new, newLater = "new-later", newTo = "new-to", newSent = "new-sent"
     case waiting, waitingHover = "waiting-hover"
     case people, peopleHover = "people-hover", peopleAdd = "people-add"
     // Extra checks, not frames of the design.
@@ -18,18 +18,18 @@ enum SnapshotState: String, CaseIterable {
     case agentDone = "agent-done", agentReply = "agent-reply", agentTriage = "agent-triage"
     // The network (phase 2).
     case peopleDetail = "people-detail", peopleInvited = "people-invited", peopleEmpty = "people-empty"
-    case pair, pairing, pairFailed = "pair-failed", pairDone = "pair-done"
-    case taskUnreadable = "task-unreadable", taskPlain = "task-plain"
+    case pair, pairing, pairFailed = "pair-failed", pairDone = "pair-done", keyLocked = "key-locked", keyStuck = "key-stuck"
+    case taskUnreadable = "task-unreadable", taskPlain = "task-plain", taskHidden = "task-hidden"
 
     /// Height of the desktop slice, as in the design (`--h`).
     var deskHeight: CGFloat {
         switch self {
         case .idle, .idleHover, .idleWaiting, .idleWaitingHover: return 120
-        case .replyOpen, .replyTyping, .replySent, .newLater: return 210
+        case .replyOpen, .replyTyping, .replySent, .newLater, .newTo, .newSent: return 210
         case .waiting, .waitingHover: return 230
         case .people, .peopleHover, .peopleAdd, .peopleInvited: return 260
-        case .peopleDetail: return 320
-        case .peopleEmpty, .pair, .pairing, .pairFailed, .pairDone: return 150
+        case .peopleDetail: return 380
+        case .peopleEmpty, .pair, .pairing, .pairFailed, .pairDone, .keyLocked, .keyStuck: return 150
         case .agentTriage: return 270
         case .agentDone, .agentReply: return 210
         default: return 180
@@ -114,7 +114,7 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.hover = true
         model.current = t
     case .taskGreen, .taskOrange, .taskRed, .taskAgent, .taskHover, .replyOpen, .replyTyping, .replySent, .taskOwnerHover,
-         .taskUnreadable, .taskPlain:
+         .taskUnreadable, .taskPlain, .taskHidden:
         var t: TodoTask
         switch state {
         case .taskGreen: t = sample("Call me when you have a minute", from: "Mom", kind: .person, urgency: .green, showAt: now)
@@ -139,6 +139,7 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
         model.mode = .task
         model.shown = .task
         model.hover = state == .taskHover || state == .taskOwnerHover
+        model.privateText = state == .taskHidden
         if state == .replyOpen || state == .replyTyping { model.replyOpen = true }
         if state == .replyTyping {
             model.replyText = "Back in 5 minutes, finishing an email"
@@ -148,16 +149,22 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             t.reply = "Back in 5 minutes, finishing an email"
             t.touchedAt = now.ms
             model.sentNote = "Back in 5 minutes, finishing an email"
+            model.replyDelivery = "Sent, shows when Viki's Mac is on"
         }
         model.current = t
-    case .newEmpty, .new, .newLater:
+    case .newEmpty, .new, .newLater, .newTo, .newSent:
         model.mode = .compose
         model.shown = .compose
-        model.newTitle = state == .newEmpty ? "" : "Call the plumber"
+        model.contacts = [
+            ContactRow(id: "1", name: "Michal Novak", hasMac: true, lastSeen: now.addingTimeInterval(-40), keys: []),
+            ContactRow(id: "3", name: "Viki", hasMac: false, lastSeen: nil, keys: []),
+        ]
+        if state == .newTo || state == .newSent { model.newTo = "1" }
+        if state == .newSent { model.composeNote = "Sent to Michal." }
+        model.newTitle = state == .newEmpty || state == .newSent ? "" : state == .newTo ? "Are you coming to lunch?" : "Call the plumber"
         model.newUrgency = state == .newLater ? .orange : .green
         model.later = state == .newLater
         model.laterDate = at(days: 1, 9, 30)
-        model.laterRepeat = state == .newLater ? "weekdays" : ""
         if state == .new { model.stillFocus = "title" }
     case .waiting, .waitingHover:
         model.mode = .waiting
@@ -203,9 +210,10 @@ private func fill(_ model: IslandModel, state: SnapshotState, now: Date) {
             model.said = "Link copied, good for 7 days."
             model.saidOK = true
         }
-    case .pair, .pairing, .pairFailed, .pairDone:
+    case .pair, .pairing, .pairFailed, .pairDone, .keyLocked, .keyStuck:
         model.mode = .pair
         model.shown = .pair
+        model.keyLock = state == .keyLocked ? .locked : state == .keyStuck ? .stuck : nil
         switch state {
         case .pairing: model.pair = .waiting("309365")
         case .pairFailed: model.pair = .failed("Expired, try again.")
@@ -221,6 +229,7 @@ private struct SnapshotDesktop: View {
     let state: SnapshotState
     let width: CGFloat
     var still = false
+    var fly: Double?
 
     var body: some View {
         let m = model.metrics
@@ -253,13 +262,15 @@ private struct SnapshotDesktop: View {
         .frame(width: width, height: state.deskHeight, alignment: .top)
         .clipped()
         .environment(\.islandStill, still)
+        .environment(\.islandFrozen, fly)
     }
 }
 
 @MainActor
 /// Default: SwiftUI ImageRenderer at 2x with stand-ins for AppKit controls. `appKit`: the real controls
 /// through NSView caching, at 1x. `real`: this Mac's own notch size instead of the design's.
-func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: Bool, real: Bool = false) -> Bool {
+/// `fly`: one frozen moment of the opening, 0 with everything in the camera, 1 in place, drawn without the fade.
+func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: Bool, real: Bool = false, fly: Double? = nil) -> Bool {
     _ = NSApplication.shared
     NSApp.appearance = NSAppearance(named: .darkAqua)
     Geist.register()
@@ -273,7 +284,7 @@ func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: B
     fill(model, state: state, now: model.now)
 
     let width: CGFloat = 560
-    let hosting = NSHostingView(rootView: SnapshotDesktop(model: model, state: state, width: width, still: !appKit))
+    let hosting = NSHostingView(rootView: SnapshotDesktop(model: model, state: state, width: width, still: !appKit, fly: fly))
     hosting.frame = NSRect(x: 0, y: 0, width: width, height: state.deskHeight)
     let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: .darkAqua)
@@ -283,7 +294,7 @@ func renderSnapshot(state: SnapshotState, to path: String, fake: Bool, appKit: B
     hosting.layoutSubtreeIfNeeded()
     if !appKit {
         // SwiftUI's own renderer draws the shapes exactly; text fields and menus are stand-ins.
-        let r = ImageRenderer(content: SnapshotDesktop(model: model, state: state, width: width, still: true))
+        let r = ImageRenderer(content: SnapshotDesktop(model: model, state: state, width: width, still: true, fly: fly))
         r.scale = 2
         guard let cg = r.cgImage, let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil

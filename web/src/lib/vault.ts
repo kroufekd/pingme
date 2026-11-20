@@ -5,13 +5,16 @@
 const DB = 'pingme'
 const STORE = 'kv'
 
-type Backend = { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
+type Backend = { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void>; del(key: string): Promise<void> }
 
 const memory = new Map<string, unknown>()
 const memoryBackend: Backend = {
   get: async (key) => memory.get(key),
   set: async (key, value) => {
     memory.set(key, value)
+  },
+  del: async (key) => {
+    memory.delete(key)
   },
 }
 
@@ -39,6 +42,15 @@ function idbBackend(idb: IDBFactory): Backend {
     set: async (key, value) => {
       const tx = (await open()).transaction(STORE, 'readwrite')
       tx.objectStore(STORE).put(value, key)
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+        tx.onabort = () => reject(tx.error)
+      })
+    },
+    del: async (key) => {
+      const tx = (await open()).transaction(STORE, 'readwrite')
+      tx.objectStore(STORE).delete(key)
       await new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve()
         tx.onerror = () => reject(tx.error)
@@ -78,6 +90,10 @@ export function vaultGet(key: string): Promise<unknown> {
 
 export function vaultSet(key: string, value: unknown): Promise<void> {
   return run((b) => b.set(key, value))
+}
+
+export function vaultDelete(key: string): Promise<void> {
+  return run((b) => b.del(key))
 }
 
 /** True once storage fell back to memory (or never had IndexedDB). For tests and diagnostics. */

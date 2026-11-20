@@ -76,6 +76,8 @@ final class IslandModel: ObservableObject {
     @Published var mode: IslandMode = .closed
     /// What the content shows. Kept while the island folds away.
     @Published var shown: IslandMode = .compose
+    /// The island is opening out of the notch (not switching cards): the controls beside it fly out of the camera.
+    @Published var arriving = false
     @Published var metrics = IslandMetrics.fake
     @Published var height: CGFloat = 120
     @Published var now = Date()
@@ -94,6 +96,10 @@ final class IslandModel: ObservableObject {
     @Published var replyText = ""
     @Published var chosenChip: String?
     @Published var sentNote = ""
+    /// Ping text is hidden until the pointer is on the island (the setting, or anything shown during a pause).
+    @Published var privateText = false
+    /// Where the reply is: "Sending", "Sent", or that the sender is offline. Empty for agent sessions.
+    @Published var replyDelivery = ""
     // Idle
     @Published var earsCount = 0
     @Published var earsUrgency: Urgency = .green
@@ -105,7 +111,11 @@ final class IslandModel: ObservableObject {
     @Published var newUrgency: Urgency = .green
     @Published var later = false
     @Published var laterDate = Date()
-    @Published var laterRepeat = ""
+    /// Who the new ping goes to: a contact's userId, or nil for this Mac (a note to self).
+    @Published var newTo: String?
+    /// "Sending to Michal...", "Sent to Michal.", or why it did not go.
+    @Published var composeNote = ""
+    @Published var composeBusy = false
     @Published var focusRequest = 0
     // People
     @Published var contacts: [ContactRow] = []
@@ -122,6 +132,8 @@ final class IslandModel: ObservableObject {
     @Published var busy = false
     // Pairing
     @Published var pair: Pairing.State = .idle
+    /// The Keychain refused this app its key (a rebuilt app, or Deny clicked). The pair state offers a way out.
+    @Published var keyLock: KeyLock?
     /// Snapshots only: which field draws focus and a caret ("reply", "title", "name").
     @Published var stillFocus: String?
 }
@@ -145,6 +157,17 @@ struct IslandActions {
     var removeContact: (String) -> Void = { _ in }
     var pair: () -> Void = {}
     var cancelPair: () -> Void = {}
+    /// Reads the key from the Keychain again (and restarts pingme when that alone did not help).
+    var retryKey: () -> Void = {}
+    var openKeychain: () -> Void = {}
+}
+
+/// Why the island cannot use this Mac's key.
+enum KeyLock: Equatable {
+    /// First refusal: try again, macOS may ask.
+    case locked
+    /// Still refused after a restart: only removing the item in Keychain Access helps.
+    case stuck
 }
 
 private struct StillKey: EnvironmentKey { static let defaultValue = false }
@@ -187,6 +210,99 @@ let kPeekSwell: CGFloat = 4
 private let earsTransition = AnyTransition.asymmetric(
     insertion: .opacity.combined(with: .scale(scale: 0.86)).animation(.spring(duration: 0.3, bounce: 0.1).delay(0.06)),
     removal: .opacity.combined(with: .scale(scale: 0.92)).animation(.easeIn(duration: 0.09)))
+
+// MARK: - Out of the camera
+
+/// The space the island lays its content out in. The camera sits at the top middle of it.
+let kIslandSpace = "island"
+
+/// The background grows alone this long before the first thing leaves the camera.
+let kFlyStart: Double = 0.12
+/// The gap between one thing and the next, and the most things that wait their turn.
+let kFlyStagger: Double = 0.035
+let kFlyMaxOrder = 6
+
+private struct ArrivedKey: EnvironmentKey { static let defaultValue = true }
+private struct OriginKey: EnvironmentKey { static let defaultValue = CGPoint.zero }
+private struct FrozenKey: EnvironmentKey { static let defaultValue: Double? = nil }
+extension EnvironmentValues {
+    /// False while the island is closed or has only started to open: everything waits in the camera.
+    var islandArrived: Bool {
+        get { self[ArrivedKey.self] }
+        set { self[ArrivedKey.self] = newValue }
+    }
+    /// The camera, in kIslandSpace.
+    var islandOrigin: CGPoint {
+        get { self[OriginKey.self] }
+        set { self[OriginKey.self] = newValue }
+    }
+    /// Snapshots only: one frozen moment of the flight, 0 in the camera, 1 in place.
+    var islandFrozen: Double? {
+        get { self[FrozenKey.self] }
+        set { self[FrozenKey.self] = newValue }
+    }
+}
+
+/// Where a thing is on its way: `travel` 1 is small in the camera, 0 is its own place. Each thing moves on its
+/// own straight line from the one point, so they spread out like a fan. Scale first, then the move, so the
+/// move is not scaled too. Render only: the layout never changes, so the island's height stays put.
+private struct FlyEffect: ViewModifier {
+    var travel: Double
+    var fade: Bool
+    var origin: CGPoint
+
+    func body(content: Content) -> some View {
+        let t = travel, o = origin
+        content
+            .visualEffect { c, g in
+                let f = g.frame(in: .named(kIslandSpace))
+                return c
+                    .scaleEffect(1 - 0.65 * t)
+                    .offset(x: (o.x - f.midX) * t, y: (o.y - f.midY) * t)
+            }
+            .opacity(fade ? 1 - t : 1)
+    }
+}
+
+/// The spring a thing arrives on: after the background, one short beat after the thing before it.
+func flySpring(_ order: Int, reduce: Bool) -> Animation {
+    reduce ? .easeOut(duration: 0.2)
+        : .spring(duration: 0.46, bounce: 0.12).delay(kFlyStart + Double(min(order, kFlyMaxOrder)) * kFlyStagger)
+}
+
+/// A thing that is already in the island when it opens: it waits in the camera and flies out once the
+/// island opens. Closing pulls everything back in at once, quickly.
+private struct FlyIn: ViewModifier {
+    let order: Int
+    @Environment(\.islandArrived) private var arrived
+    @Environment(\.islandOrigin) private var origin
+    @Environment(\.islandFrozen) private var frozen
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let p = frozen ?? (arrived ? 1 : 0)
+        content
+            // A frozen snapshot shows the paths, so it does not fade.
+            .modifier(FlyEffect(travel: reduceMotion ? 0 : 1 - p, fade: frozen == nil, origin: origin))
+            .animation(arrived ? flySpring(order, reduce: reduceMotion) : .easeIn(duration: 0.14), value: arrived)
+    }
+}
+
+/// The same flight for a thing that appears together with the island (the controls beside the notch).
+/// Only while the island is opening: a switch between cards keeps its plain fade.
+@MainActor
+func flyTransition(_ order: Int, origin: CGPoint, reduce: Bool) -> AnyTransition {
+    .asymmetric(
+        insertion: .modifier(active: FlyEffect(travel: reduce ? 0 : 1, fade: true, origin: origin),
+                             identity: FlyEffect(travel: 0, fade: true, origin: origin))
+            .animation(flySpring(order, reduce: reduce)),
+        removal: .opacity.animation(.easeIn(duration: 0.09)))
+}
+
+extension View {
+    /// Flies out of the camera when the island opens. `order`: 0 beside the notch, then top to bottom.
+    func flyIn(_ order: Int) -> some View { modifier(FlyIn(order: order)) }
+}
 
 // MARK: - Shape
 
@@ -239,22 +355,22 @@ struct IslandView: View {
         // Small outward curves where the island meets the menu bar, like the real notch. Only while open:
         // the closed window is exactly the notch wide.
         let ear: CGFloat = open ? kIslandEar : 0
-        let still = open || reduceMotion
         ZStack(alignment: .top) {
             content
                 .frame(width: kIslandWidth, alignment: .top)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
-                // The content comes out of the notch with the shape: from a little smaller and soft, to sharp.
-                .scaleEffect(still ? 1 : 0.88, anchor: .top)
-                .blur(radius: still ? 0 : 6)
+                // The background grows first; each thing then flies out of the camera on its own (flyIn).
                 .opacity(open ? 1 : 0)
-                .animation(open ? (reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.42, bounce: 0.08).delay(0.07))
-                                : .easeIn(duration: 0.12), value: open)
+                .animation(open ? .easeOut(duration: 0.1).delay(reduceMotion ? 0 : kFlyStart) : .easeIn(duration: 0.12), value: open)
                 .allowsHitTesting(open)
             EarsBar(model: model, actions: actions)
                 .frame(width: w, height: m.bar)
         }
+        // As wide as the open island in every state (the content keeps its width), so the camera is fixed.
+        .coordinateSpace(.named(kIslandSpace))
+        .environment(\.islandArrived, open)
+        .environment(\.islandOrigin, CGPoint(x: kIslandWidth / 2, y: m.bar / 2))
         .frame(width: w + 2 * ear, height: h, alignment: .top)
         .background {
             Color.black
@@ -365,6 +481,7 @@ struct EarsBar: View {
                 .foregroundStyle(Ink.urgency(t.level))
                 .frame(minHeight: 24)
                 .accessibilityElement(children: .combine)
+                .modifier(Arrive(model: model))
                 Spacer(minLength: 8)
                 Text(t.reply == nil ? Fmt.ago(t.showAt, now: model.now) : "")
                     .font(Geist.font(12, 500))
@@ -373,21 +490,36 @@ struct EarsBar: View {
                     .lineLimit(1)
                     .opacity(reveal ? 1 : 0)
                     .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: reveal)
+                    .modifier(Arrive(model: model))
             }
         case .compose:
-            listEar
+            listEar.modifier(Arrive(model: model))
             Spacer(minLength: 0)
-            ear(icon: "user", label: "People") { actions.switchTo(.people) }
+            ear(icon: "user", label: "People") { actions.switchTo(.people) }.modifier(Arrive(model: model))
         case .waiting:
-            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }
+            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }.modifier(Arrive(model: model))
             Spacer(minLength: 0)
-            ear(icon: "user", label: "People") { actions.switchTo(.people) }
+            ear(icon: "user", label: "People") { actions.switchTo(.people) }.modifier(Arrive(model: model))
         case .people, .pair:
-            listEar
+            listEar.modifier(Arrive(model: model))
             Spacer(minLength: 0)
-            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }
+            ear(icon: "plus", label: "New task") { actions.switchTo(.compose) }.modifier(Arrive(model: model))
         case .closed:
             EmptyView()
+        }
+    }
+
+    /// The controls beside the notch appear with the island, so they fly out of the camera as they appear;
+    /// a switch between cards while open keeps the plain fade.
+    private struct Arrive: ViewModifier {
+        @ObservedObject var model: IslandModel
+        @Environment(\.islandOrigin) private var origin
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        func body(content: Content) -> some View {
+            content
+                .flyIn(0)
+                .transition(model.arriving ? flyTransition(0, origin: origin, reduce: reduceMotion) : .opacity)
         }
     }
 
@@ -443,12 +575,23 @@ struct Dot: View {
     }
 }
 
-/// White ring 2 px outside the control, like the design's `:focus-visible`.
+/// Whether focus last moved by keyboard (Tab, arrows) or by a click. Like the web's
+/// `:focus-visible`: a click on a row gives it focus too, but the ring is for the keyboard.
+final class InputMode: ObservableObject, @unchecked Sendable {
+    nonisolated(unsafe) static let shared = InputMode()
+    @Published var keyboard = false
+
+    /// Keys that move focus between controls. Typing in a field does not count.
+    static func movesFocus(_ keyCode: UInt16) -> Bool { [48, 123, 124, 125, 126].contains(keyCode) }
+}
+
+/// White ring 2 px outside the control, like the design's `:focus-visible`: only after keyboard use.
 private struct FocusRing<S: InsettableShape>: ViewModifier {
     let shape: S
     let on: Bool
+    @ObservedObject private var input = InputMode.shared
     func body(content: Content) -> some View {
-        content.overlay { if on { shape.inset(by: -3).stroke(Color.white, lineWidth: 2) } }
+        content.overlay { if on && input.keyboard { shape.inset(by: -3).stroke(Color.white, lineWidth: 2) } }
     }
 }
 
@@ -481,7 +624,7 @@ private struct EarBody: View {
     }
 }
 
-/// The dark pill (`.q`): Reply, 10 min, reply chips, day, time, repeat, Invite, Key.
+/// The dark pill (`.q`): Reply, 10 min, reply chips, day, time, Invite, Key.
 struct QStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { QBody(config: configuration) }
 }
@@ -635,6 +778,8 @@ struct TaskCard: View {
     enum Spot: Hashable { case done, reply, open, snooze, chip(Int), send }
 
     private var reveal: Bool { model.hover || focus != nil }
+    /// Gray bars instead of the text until the pointer comes (Hide ping text, or a red ping while paused).
+    private var hidden: Bool { model.privateText && !reveal && !model.replyOpen }
     private static let titleWidth = kContentWidth - 12 - 32
 
     var body: some View {
@@ -655,7 +800,12 @@ struct TaskCard: View {
                                                     lineHeight: 20, max: Self.titleWidth), alignment: .leading)
                         .padding(.top, 1)
                         .padding(.vertical, 0.5)
-                    if task.forAgent, let report = task.report, !report.isEmpty {
+                        // The text can be selected, and a right click copies all of it.
+                        .textSelection(.enabled)
+                        .contextMenu { if task.unreadable != true { copyButton(task.title) } }
+                        .redacted(reason: hidden ? .placeholder : [])
+                        .accessibilityHint(hidden ? "Hidden until you point at the island" : "")
+                    if task.forAgent, let report = task.report, !report.isEmpty, !hidden {
                         Text(report)
                             .font(Geist.font(12.5))
                             .lineSpacing(2)
@@ -664,23 +814,28 @@ struct TaskCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(width: Self.titleWidth, alignment: .leading)
                             .padding(.top, 6)
+                            .textSelection(.enabled)
+                            .contextMenu { copyButton(report) }
                             .accessibilityLabel("Agent report: \(report)")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .flyIn(1)
                 Button { actions.done(task.id) } label: { Icon(name: "check", size: 16, color: .black) }
                     .buttonStyle(RoundStyle(size: 32, grow: true))
                     .focused($focus, equals: .done)
                     .accessibilityLabel("Done")
+                    .flyIn(2)
             }
             .padding(.top, 6)
 
             if model.replyOpen && task.canReply {
                 replyStack
+                    .flyIn(3)
                     .transition(.opacity)
             } else {
-                if !model.sentNote.isEmpty { note }
-                more
+                if !model.sentNote.isEmpty && !hidden { note.flyIn(3) }
+                more.flyIn(3)
             }
         }
         .animation(islandSpring(reduceMotion, 0.45), value: model.replyOpen)
@@ -712,6 +867,13 @@ struct TaskCard: View {
     }
 
     private var whoText: String { Self.whoText(task) }
+
+    private func copyButton(_ text: String) -> some View {
+        Button("Copy text") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+    }
 
     static func whoText(_ task: TodoTask) -> String {
         if task.isAgentSession { return "Claude · \(task.fromName)" }
@@ -765,13 +927,20 @@ struct TaskCard: View {
         HStack(spacing: 6) {
             Icon(name: "reply", size: 14, color: .white).opacity(0.7)
             Text(model.sentNote).lineLimit(1).truncationMode(.tail)
+            if !model.replyDelivery.isEmpty {
+                Text(model.replyDelivery)
+                    .foregroundStyle(Ink.on3)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
         }
         .frame(height: 18.125)
         .font(Geist.font(12.5))
         .foregroundStyle(Ink.on2)
         .padding(.top, 10)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("You replied: \(model.sentNote)")
+        .accessibilityLabel("You replied: \(model.sentNote). \(model.replyDelivery)")
     }
 
     /// Three chips and a field. Typing moves the chips aside and brings the arrow.
@@ -832,16 +1001,34 @@ struct ComposeCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var typing: Bool { !model.newTitle.isEmpty }
+    /// Contacts with the Mac app: the only people a ping can reach.
+    private var pingable: [ContactRow] { model.contacts.filter(\.hasMac) }
+    private var to: ContactRow? { model.newTo.flatMap { id in pingable.first { $0.id == id } } }
+    private var placeholder: String { to.map { "Ping \(Fmt.firstName($0.name))..." } ?? "Note to self..." }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BareField(placeholder: "Note to self...", text: $model.newTitle, font: Geist.font(15, 600),
-                      placeholderFont: Geist.font(15, 500), limit: kTitleMax,
-                      focus: $titleFocused, stillFocused: model.stillFocus == "title", onSubmit: actions.add)
-                .kerning(-0.15)
-                .frame(height: 32)
-                .padding(.top, 4)
-                .accessibilityLabel("Note to self")
+            HStack(spacing: 8) {
+                BareField(placeholder: placeholder, text: $model.newTitle, font: Geist.font(15, 600),
+                          placeholderFont: Geist.font(15, 500), limit: kTitleMax,
+                          focus: $titleFocused, stillFocused: model.stillFocus == "title", onSubmit: actions.add)
+                    .kerning(-0.15)
+                    .accessibilityLabel(to == nil ? "Note to self" : placeholder)
+                    .flyIn(1)
+                if !pingable.isEmpty {
+                    MenuPill(text: to.map { Fmt.firstName($0.name) } ?? "Me", icon: "user", a11y: "To",
+                             items: [("Me", to == nil)] + pingable.map { c in
+                                 (c.online(at: model.now) ? c.name : "\(c.name), offline", c.id == to?.id)
+                             }) { i in
+                        model.newTo = i == 0 || !pingable.indices.contains(i - 1) ? nil : pingable[i - 1].id
+                        model.focusRequest += 1
+                    }
+                    .help("Who gets it")
+                    .flyIn(2)
+                }
+            }
+            .frame(height: 32)
+            .padding(.top, 4)
             if typing {
                 HStack(spacing: 6) {
                     UrgencyWords(selection: $model.newUrgency)
@@ -857,18 +1044,31 @@ struct ComposeCard: View {
                     .help("Later")
                     Button(action: actions.add) { Icon(name: "send", size: 14, color: .black) }
                         .buttonStyle(RoundStyle(size: 28))
-                        .accessibilityLabel("Add task")
-                        .help("Add task")
+                        .disabled(model.composeBusy)
+                        .accessibilityLabel(to == nil ? "Add task" : "Send ping")
+                        .help(to == nil ? "Add task" : "Send ping")
                 }
                 .padding(.top, 6)
+                .flyIn(3)
                 .transition(.opacity)
                 if model.later {
                     LaterRow(model: model)
                         .padding(.top, 8)
+                        .flyIn(4)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
                 }
             }
+            if !model.composeNote.isEmpty {
+                Text(model.composeNote)
+                    .font(Geist.font(12.5, 500))
+                    .foregroundStyle(Ink.on3)
+                    .lineLimit(2)
+                    .padding(.top, 8)
+                    .accessibilityAddTraits(.updatesFrequently)
+                    .flyIn(3)
+            }
         }
+        .onChange(of: model.newTitle) { _, _ in if !model.composeBusy && model.newTo != nil { model.composeNote = "" } }
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.35), value: model.later)
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.3), value: typing)
         .onAppear { titleFocused = true }
@@ -929,11 +1129,9 @@ private struct WordBody: View {
     }
 }
 
-/// Day, time and repeat behind the clock. Each pill opens a menu.
+/// Day and time behind the clock. Each pill opens a menu.
 struct LaterRow: View {
     @ObservedObject var model: IslandModel
-
-    private static let repeatOptions: [(String, String)] = [("", "Once")] + Recurrence.all.map { ($0, Recurrence.label($0) ?? $0) }
 
     var body: some View {
         let cal = Calendar.current
@@ -952,10 +1150,6 @@ struct LaterRow: View {
                      items: (0..<96).map { (String(format: "%02d:%02d", $0 / 4, ($0 % 4) * 15), $0 == slot) }) { i in
                 let d = cal.date(bySettingHour: i / 4, minute: (i % 4) * 15, second: 0, of: model.laterDate) ?? model.laterDate
                 model.laterDate = d
-            }
-            MenuPill(text: Self.repeatOptions.first { $0.0 == model.laterRepeat }?.1 ?? "Once", icon: "repeat", a11y: "Repeat",
-                     items: Self.repeatOptions.map { ($0.1, $0.0 == model.laterRepeat) }) { i in
-                if Self.repeatOptions.indices.contains(i) { model.laterRepeat = Self.repeatOptions[i].0 }
             }
         }
     }
@@ -1077,14 +1271,15 @@ struct WaitingCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if model.waitingRows.isEmpty {
-                QuietLine(text: "Nothing waiting.")
+                QuietLine(text: "Nothing waiting.").flyIn(1)
             } else {
-                ForEach(model.waitingRows.prefix(Self.maxRows), id: \.id) { t in
+                ForEach(Array(model.waitingRows.prefix(Self.maxRows).enumerated()), id: \.element.id) { i, t in
                     ListRow(id: t.id, model: model, focused: $focused, focusable: true) { lit in
                         WaitingRowContent(task: t, now: model.now, lit: lit)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(WaitingRowContent.label(t, now: model.now))
+                    .flyIn(1 + i)
                 }
                 if model.waitingRows.count > Self.maxRows {
                     Text("and \(model.waitingRows.count - Self.maxRows) more")
@@ -1092,6 +1287,7 @@ struct WaitingCard: View {
                         .foregroundStyle(Ink.on3)
                         .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
                         .padding(.leading, 18)
+                        .flyIn(1 + Self.maxRows)
                 }
             }
         }
@@ -1109,7 +1305,6 @@ private struct WaitingRowContent: View {
         var parts = [t.kind == .owner && t.source != "web" ? "from me" : t.createdByName]
         if let m = TaskCard.marker(t) { parts.append(m) }
         if t.isSnoozed(at: now) { parts.append("snoozed") }
-        if let r = t.repeat.flatMap(Recurrence.label) { parts.append(r.prefix(1).lowercased() + r.dropFirst()) }
         return parts.joined(separator: ", ")
     }
 
@@ -1149,49 +1344,67 @@ struct PeopleCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var named: Bool { !model.personName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var rows: Int { max(1, model.contacts.count + model.invites.count) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 if model.contacts.isEmpty && model.invites.isEmpty {
-                    QuietLine(text: emptyText)
+                    QuietLine(text: emptyText).flyIn(1)
                 } else {
-                    ForEach(model.contacts) { c in
-                        ListRow(id: c.id, model: model, focused: $focused, focusable: true) { lit in
-                            ContactRowContent(contact: c, now: model.now, lit: lit, open: model.openContact == c.id)
+                    ForEach(Array(model.contacts.enumerated()), id: \.element.id) { n, c in
+                        let open = model.openContact == c.id
+                        // An open contact is one card: its row and its detail on one soft background.
+                        VStack(alignment: .leading, spacing: 0) {
+                            ListRow(id: c.id, model: model, focused: $focused, focusable: true) { lit in
+                                ContactRowContent(contact: c, now: model.now, lit: lit, open: open)
+                            }
+                            .onTapGesture { actions.toggleContact(c.id) }
+                            .onKeyPress(.return) { actions.toggleContact(c.id); return .handled }
+                            .onKeyPress(.space) { actions.toggleContact(c.id); return .handled }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(ContactRowContent.label(c, now: model.now))
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityValue(open ? "Open" : "")
+                            .accessibilityHint("Safety codes")
+                            .accessibilityAction(.default) { actions.toggleContact(c.id) }
+                            if open {
+                                KeyDetail(contact: c, mine: model.myKey, onRemove: { actions.removeContact(c.id) })
+                                    .transition(.opacity)
+                            }
                         }
-                        .onTapGesture { actions.toggleContact(c.id) }
-                        .onKeyPress(.return) { actions.toggleContact(c.id); return .handled }
-                        .onKeyPress(.space) { actions.toggleContact(c.id); return .handled }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(ContactRowContent.label(c, now: model.now))
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityHint("Key fingerprint")
-                        .accessibilityAction(.default) { actions.toggleContact(c.id) }
-                        if model.openContact == c.id {
-                            KeyDetail(contact: c, mine: model.myKey, onRemove: { actions.removeContact(c.id) })
-                                .transition(.opacity)
+                        .background {
+                            if open {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Ink.island2)
+                                    .padding(.horizontal, -8)
+                                    .transition(.opacity)
+                            }
                         }
+                        .padding(.vertical, open ? 4 : 0)
+                        .flyIn(1 + n)
                     }
-                    ForEach(model.invites) { i in
+                    ForEach(Array(model.invites.enumerated()), id: \.element.id) { n, i in
                         ListRow(id: i.id, model: model, focused: $focused, focusable: false) { lit in
                             InviteRowContent(invite: i, lit: lit, onRemove: { actions.revokeInvite(i.id) }, focused: $focused)
                         }
+                        .flyIn(1 + model.contacts.count + n)
                     }
                 }
             }
             .padding(.top, 4)
             .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.openContact)
             if model.saidOK && !model.said.isEmpty {
-                saidNote
+                saidNote.flyIn(rows + 1)
             } else {
-                addRow
+                addRow.flyIn(rows + 1)
                 if !model.said.isEmpty {
                     Text(model.said)
                         .font(Geist.font(12))
                         .foregroundStyle(Ink.on2)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 6)
+                        .flyIn(rows + 2)
                 }
             }
         }
@@ -1296,31 +1509,45 @@ private struct KeyDetail: View {
     /// The first press only asks; the second removes.
     @State private var armed = false
 
+    private var firstName: String { contact.name.split(separator: " ").first.map(String.init) ?? contact.name }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            VStack(alignment: .leading, spacing: 4) {
-                if contact.keys.isEmpty {
-                    line("", "No devices")
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            Text(contact.keys.isEmpty
+                 ? "\(firstName) has no device yet, so there is nothing to compare."
+                 : "Same numbers on \(firstName)'s screen mean nobody else can read your pings.")
+                .font(Geist.font(12))
+                .foregroundStyle(Ink.on3)
+                .lineSpacing(1.5)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, contact.keys.isEmpty ? 4 : 8)
+            VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(contact.keys.prefix(4).enumerated()), id: \.offset) { _, k in
-                    line(k.kind, k.fingerprint)
+                    line(k.kind == "Mac" ? "Their Mac" : "Their web", k.fingerprint)
                 }
-                if let mine { line("This Mac", mine) }
+                if let mine, !contact.keys.isEmpty { line("This Mac", mine) }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Key fingerprints")
+            .accessibilityLabel("Safety codes")
             Button {
                 if armed { onRemove() } else { armed = true }
             } label: {
-                QLabel(icon: "x", text: armed ? "Really remove" : "Remove from contacts")
+                Text(armed ? "Click again to remove" : "Remove from contacts")
             }
-            .buttonStyle(QStyle())
-            .padding(.top, 4)
+            .buttonStyle(LinkStyle(danger: armed))
+            .padding(.top, 8)
             .accessibilityLabel(armed ? "Confirm: remove \(contact.name) from contacts" : "Remove \(contact.name) from contacts")
+            // Unconfirmed, the question goes away again.
+            .task(id: armed) {
+                guard armed else { return }
+                try? await Task.sleep(for: .seconds(4))
+                armed = false
+            }
         }
         .padding(.leading, 24)
+        .padding(.trailing, 8)
         .padding(.top, 2)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
     }
 
     private func line(_ label: String, _ value: String) -> some View {
@@ -1328,13 +1555,41 @@ private struct KeyDetail: View {
             Text(label)
                 .font(Geist.font(12, 500))
                 .foregroundStyle(Ink.on3)
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 66, alignment: .leading)
             Text(value)
-                .font(Geist.mono(12))
-                .foregroundStyle(Ink.on2)
+                .font(Geist.mono(12.5))
+                .foregroundStyle(Ink.on)
                 .textSelection(.enabled)
         }
         .frame(minHeight: 18)
+    }
+}
+
+/// A quiet text button: no pill, just words that brighten on hover. `danger` asks for a second click.
+struct LinkStyle: ButtonStyle {
+    var danger = false
+    func makeBody(configuration: Configuration) -> some View { LinkBody(config: configuration, danger: danger) }
+}
+
+private struct LinkBody: View {
+    let config: ButtonStyle.Configuration
+    let danger: Bool
+    @State private var hover = false
+    @Environment(\.isFocused) private var focused
+
+    var body: some View {
+        config.label
+            .font(Geist.font(12, 550))
+            .foregroundStyle(danger ? Ink.urgency(.red) : (hover ? Ink.on : Ink.on3))
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .contentShape(Capsule())
+            .modifier(FocusRing(shape: Capsule(), on: focused))
+            .padding(.horizontal, -6)
+            .opacity(config.isPressed ? 0.7 : 1)
+            .onHover { hover = $0 }
+            .animation(.easeOut(duration: 0.15), value: hover)
+            .animation(.easeOut(duration: 0.15), value: danger)
     }
 }
 
@@ -1346,7 +1601,7 @@ private struct InviteRowContent: View {
 
     private var detail: String {
         if let email = invite.email, !email.isEmpty { return email }
-        return invite.expiresAt.map { "until \(Fmt.day(Date(ms: $0)))" } ?? "invite"
+        return invite.expiresAt.map { "invited, link until \(Fmt.day(Date(ms: $0)))" } ?? "invited"
     }
 
     var body: some View {
@@ -1410,6 +1665,31 @@ struct PairCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             switch model.pair {
+            case .idle where model.keyLock == .locked, .failed where model.keyLock == .locked:
+                HStack(spacing: 10) {
+                    Button(action: actions.retryKey) { Text("Try again") }
+                        .buttonStyle(PrimaryStyle())
+                        .accessibilityHint("Reads the key again, and restarts pingme if that is not enough")
+                    Text("macOS didn't let pingme read its key. Click Always Allow if macOS asks.")
+                        .font(Geist.font(12))
+                        .foregroundStyle(Ink.on2)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            case .idle where model.keyLock == .stuck, .failed where model.keyLock == .stuck:
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Still locked after a restart. In Keychain Access, delete the item \u{201C}pingme\u{201D}, then connect again.")
+                        .font(Geist.font(12))
+                        .foregroundStyle(Ink.on2)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 14) {
+                        Button(action: actions.openKeychain) { Text("Open Keychain Access") }
+                            .buttonStyle(PrimaryStyle())
+                        Button(action: actions.retryKey) { Text("Check again") }
+                            .buttonStyle(LinkStyle())
+                    }
+                }
             case .idle, .failed:
                 HStack(spacing: 10) {
                     Button(action: actions.pair) { Text("Connect this Mac") }
@@ -1473,7 +1753,9 @@ struct PairCard: View {
         }
         .padding(.top, 6)
         .padding(.bottom, 2)
+        .flyIn(1)
         .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.pair)
+        .animation(reduceMotion ? nil : .timingCurve(0.3, 0.7, 0.2, 1, duration: 0.25), value: model.keyLock)
     }
 }
 

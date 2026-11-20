@@ -51,12 +51,14 @@ export function SentToggle({ count, badge, open, onToggle }: { count: number; ba
 }
 
 /** Icon only. The word is in the tooltip and, spoken in full, for screen readers. */
+export const NOT_DELIVERED = 'Not delivered: their Mac stayed off for a week after it was due.'
+
 function StatusCell({ row, kind, now }: { row: Row; kind: Kind; now: number }) {
   return (
     <span className="st" title={wordFor(kind, row, now)}>
       {KINDS.map((k) => {
         const on = k === kind
-        const cls = [on ? 'on' : '', k === 'done' ? 'ok' : ''].filter(Boolean).join(' ')
+        const cls = [on ? 'on' : '', k === 'done' ? 'ok' : '', k === 'lost' ? 'bad' : ''].filter(Boolean).join(' ')
         return (
           <span key={k} className={cls || undefined} aria-hidden={!on || undefined}>
             {k === 'typing' ? (
@@ -105,6 +107,14 @@ function Item({ row, reply, now, isNew, index, showWho }: { row: Row; reply: str
           <p className="it-t">
             <span className="it-ph" aria-hidden="true" />
             <span className="vh">Loading text</span>
+          </p>
+        )}
+        {kind === 'lost' && <p className="it-lost">{NOT_DELIVERED}</p>}
+        {row.note && !reply && (
+          <p className="it-r">
+            <Icon name="robot" size={14} />
+            <span className="vh">Automatic note: </span>
+            <span>{row.note}</span>
           </p>
         )}
         {(reply || row.replyMissing) && (

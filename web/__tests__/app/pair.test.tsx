@@ -27,6 +27,11 @@ vi.mock('convex/react', async () => {
       if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
       return h.mutations[name]
     },
+    useAction: (ref: never) => {
+      const name = getFunctionName(ref)
+      if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
+      return h.mutations[name]
+    },
   }
 })
 
@@ -53,7 +58,7 @@ function mutation(name: string) {
 
 function member() {
   h.auth.isAuthenticated = true
-  h.queries['senders:me'] = { status: 'member', name: 'Michal', userId: 'u-mi', onboarded: true }
+  h.queries['senders:me'] = { status: 'member', name: 'Michal', email: 'michal@example.com', userId: 'u-mi', onboarded: true }
 }
 
 /** Every real (not skipped) call of a query. */
@@ -110,6 +115,8 @@ describe('/pair', () => {
     const field = screen.getByRole('textbox', { name: 'Code from your Mac' })
     await waitFor(() => expect(field).toHaveFocus())
     expect(screen.getByText("Don't see this code on your Mac? Don't connect.")).toBeInTheDocument()
+    // It says which account the Mac joins, before the code is typed.
+    expect(screen.getByText('michal@example.com').closest('p')).toHaveTextContent('This Mac joins michal@example.com.')
 
     await typeCode()
     expect(field).toHaveValue(CODE)

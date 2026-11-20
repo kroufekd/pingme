@@ -386,6 +386,8 @@ final class DeviceAPI: @unchecked Sendable {
         var to: String
         var forAgent: Bool
         var urgency: String
+        /// Later: when it shows on their Mac (ms). Nil: now.
+        var dueAt: Double? = nil
         var fromAgent: String?
         var envelopes: [Seal.Envelope]
         var titleEnvelopes: [Seal.Envelope]
@@ -397,6 +399,7 @@ final class DeviceAPI: @unchecked Sendable {
         var body: [String: Any] = ["ref": p.ref, "to": p.to, "forAgent": p.forAgent, "urgency": p.urgency,
                                    "envelopes": list(p.envelopes), "titleEnvelopes": list(p.titleEnvelopes)]
         if let a = p.fromAgent { body["fromAgent"] = a }
+        if let d = p.dueAt { body["dueAt"] = d.rounded() }
         return try await call("POST", "/device/send", token: token, body: body)
     }
 

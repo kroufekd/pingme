@@ -1,7 +1,7 @@
 // Claude Code sessions on this Mac. The Stop hook (pingme-hook) drops a file in the inbox when a
-// session finishes while the Claude app is not in front. The island shows it under the session's
-// name with a one-line recap from Claude Haiku, a reply goes back over the session's own socket,
-// and "Open" opens the session in the Claude app.
+// session finishes while the Claude app is not in front. Claude Haiku decides whether the session now
+// waits on the owner; only then the island shows it under the session's name with one line saying what
+// they need to do. A reply goes back over the session's own socket, and "Open" opens it in the Claude app.
 
 import AppKit
 import Foundation
@@ -21,11 +21,12 @@ final class AgentBridge {
     let inbox: URL
     private let tokenFile: URL
     private var sockets: [String: (path: String, token: String?)] = [:]
-    /// One recap at a time. A finished session waits at most `recapWait` for it, then shows anyway.
+    /// One recap at a time. A finished session stays hidden until its recap says whether it waits on the
+    /// owner; `recapWait` only bounds that if the app stops before the recap comes back.
     private let recapQueue = DispatchQueue(label: "pingme.recap", qos: .userInitiated)
     var onRecap: (() -> Void)?
 
-    static let recapWait: TimeInterval = 20
+    static let recapWait: TimeInterval = 120
     static let recapCap = 80
     nonisolated static let recapTimeout: TimeInterval = 25
     nonisolated static let recapMax = 110
@@ -67,13 +68,18 @@ final class AgentBridge {
         let allowed = claude != nil && !(token ?? "").isEmpty && (last ?? "").count > 0 && takeRecapQuota()
         recapQueue.async {
             let name = Self.sessionInfo(for: session)?.title ?? project
-            var line: String?
+            var recap: Recap?
             if allowed, let claude, let token {
-                line = Self.recapLine(claude: claude, token: token, name: name, ask: ask ?? "", last: last ?? "")
+                recap = Self.recapLine(claude: claude, token: token, name: name, ask: ask ?? "", last: last ?? "")
             }
+            // Without Haiku: it waits on the owner when the last answer asks them something.
+            let waits = recap?.waits ?? Self.waitsOnYou(last)
+            let line = recap?.line ?? Self.question(last)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    store.finishAgentSession(session: session, name: name, text: line, ifStill: quick)
+                    // Only a session that needs the owner pops. A plain report stays off the island.
+                    if waits { store.finishAgentSession(session: session, name: name, text: line, ifStill: quick) }
+                    else { store.dropAgentSession(session: session, ifStill: quick) }
                     self.onRecap?()
                 }
             }
@@ -104,19 +110,24 @@ final class AgentBridge {
         <last_answer>
         \(fence(last, "last_answer"))
         </last_answer>
-        Write them one short sentence in English (at most 80 characters), addressed to them as "you". They should see right away how it went:
-        what is done and with what result, or what they need to do. If it asks them something, write that question.
-        Do not use the words session, user, agent or Claude. No markdown, no quotes, no long dashes.
-        Tone examples (take the content only from the data above):
-        The new site is live at pingme.macaly.app, the form is in the middle
-        Sign in on the panel with Google, then I'll run QA
-        Merge now, or wait for Tom's review?
-        The build fails on types in checkout, the fix is small
-        Print only that one sentence.
+        <task> is what the person asked for. <last_answer> is how it ended. Decide whether it now waits on them:
+        a question to them, a login, an approval, a decision, or something only they can do. A plan the work will
+        carry out itself, a report or a finished result does not wait on them.
+        If it does not wait on them, print only: DONE
+        If it does, print WAITS: and one short sentence in English (at most 80 characters) with what it is about
+        and exactly what they need to do or answer.
+        - Never turn <task> into a to-do for them. They wrote it; it is what they asked for, not what they must do.
+        English even when the data is in another language. Do not use the words session, user, agent or Claude.
+        No markdown, no quotes, no long dashes.
+        Examples (take the content only from the data above):
+        WAITS: Checkout fix is ready, merge now or wait for Tom's review?
+        WAITS: Deploy needs your Google login on the preview tab
+        DONE
+        Print only that one line.
         """
     }
 
-    nonisolated static func recapLine(claude: String, token: String, name: String, ask: String, last: String) -> String? {
+    nonisolated static func recapLine(claude: String, token: String, name: String, ask: String, last: String) -> Recap? {
         let empty = FileManager.default.temporaryDirectory.appendingPathComponent("pingme-recap", isDirectory: true)
         try? FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
@@ -142,7 +153,48 @@ final class AgentBridge {
         killer.cancel()
         guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               (o["is_error"] as? Bool) != true, let result = o["result"] as? String else { return nil }
-        return cleanRecap(result)
+        return parseRecap(result)
+    }
+
+    struct Recap: Equatable {
+        var waits: Bool
+        var line: String?
+    }
+
+    /// "WAITS: <sentence>" or "DONE". Anything else is no verdict: the caller falls back to the last answer.
+    nonisolated static func parseRecap(_ text: String) -> Recap? {
+        let first = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        let plain = first.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+        let upper = plain.uppercased()
+        if upper.hasPrefix("DONE") { return Recap(waits: false, line: nil) }
+        guard upper.hasPrefix("WAITS") else { return nil }
+        var rest = plain.dropFirst("WAITS".count)
+        while let c = rest.first, c == ":" || c == " " || c == "-" { rest = rest.dropFirst() }
+        return Recap(waits: true, line: cleanRecap(String(rest)))
+    }
+
+    /// The last lines of the answer that a person would read as a question to them.
+    nonisolated static func lastQuestion(_ text: String?) -> String? {
+        let lines = (text ?? "").split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("```") }
+        for line in lines.suffix(3).reversed() {
+            let bare = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: " *_\"'"))
+            if bare.hasSuffix("?") { return bare }
+        }
+        return nil
+    }
+
+    /// No recap from Haiku: the session waits on the owner when its answer ends with a question.
+    nonisolated static func waitsOnYou(_ last: String?) -> Bool { lastQuestion(last) != nil }
+
+    /// That question, short enough for the island, or nil to keep the first sentence.
+    nonisolated static func question(_ last: String?) -> String? {
+        guard let q = lastQuestion(last) else { return nil }
+        // "Done. Merge it?" asks the last sentence, not the first.
+        let parts = q.components(separatedBy: ". ").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return summary(parts.last ?? q)
     }
 
     /// First line of what Haiku wrote: no quotes or markdown, plain hyphens, at most `recapMax` characters.

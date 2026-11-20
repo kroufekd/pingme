@@ -1,4 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { NOTIFY_ASK, NOTIFY_ON, REPLIED } from '@/components/app/reply-alerts'
+import { NOT_DELIVERED } from '@/components/app/task-list'
+import { inviterLabel } from '@/components/app/sign-in'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetDeviceKey } from '@/lib/device-key'
 import type { Contact, ContactsView, SentRow } from '@/lib/network'
@@ -27,6 +30,11 @@ vi.mock('convex/react', async () => {
       return h.queries[getFunctionName(ref)]
     },
     useMutation: (ref: never) => {
+      const name = getFunctionName(ref)
+      if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
+      return h.mutations[name]
+    },
+    useAction: (ref: never) => {
       const name = getFunctionName(ref)
       if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => h.results[name])
       return h.mutations[name]
@@ -137,7 +145,7 @@ describe('sign-in is a state of the same screen', () => {
     // The note is a polite live region that is always there; the hint is its text.
     const note = await screen.findByText("Couldn't send a code to this email.")
     expect(note).toHaveAttribute('aria-live', 'polite')
-    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-describedby', note.id)
+    expect(screen.getByLabelText('Email').getAttribute('aria-describedby')?.split(' ')).toContain(note.id)
     expect(screen.getByLabelText('Email')).toHaveValue('nekdo@example.com')
     expect(screen.getByLabelText('Email').closest('form')).toHaveClass('on')
   })
@@ -382,8 +390,11 @@ describe('who it goes to', () => {
     const go = screen.getByRole('button', { name: 'Send' })
     expect(go).toHaveAttribute('aria-disabled', 'true')
     expect(go).toHaveAttribute('title', 'No app yet')
+    // Said as soon as they are the one picked, not only after a send that cannot work.
+    const why = "Dominik hasn't set up the Mac app yet, so pings can't reach them."
+    expect(screen.getByText(why)).toBeInTheDocument()
     await sendTitle('Ahoj')
-    expect(await screen.findByText('No app yet.')).toBeInTheDocument()
+    expect(await screen.findByText(why)).toBeInTheDocument()
     expect(title).toHaveValue('Ahoj')
     await act(() => new Promise((r) => setTimeout(r, 10)))
     expect(mutation('messages:send')).not.toHaveBeenCalled()
@@ -491,25 +502,16 @@ describe('who it goes to', () => {
 })
 
 describe('the sent list opens on this device', () => {
-  it('opens the later options with day, time and the six repeat options', async () => {
+  it('opens the later options with day and time, and no repeat', async () => {
     member()
     render(<App />)
     const when = await screen.findByRole('button', { name: 'Send later' })
     expect(when).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('combobox', { name: 'Repeat' })).toBeNull()
     fireEvent.click(when)
     expect(when).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByLabelText('Day')).toBeVisible()
     expect(screen.getByLabelText('Time')).toBeVisible()
-    const repeat = screen.getByRole('combobox', { name: 'Repeat' })
-    expect(Array.from((repeat as HTMLSelectElement).options).map((o) => [o.value, o.text])).toEqual([
-      ['', 'Once'],
-      ['daily', 'Every day'],
-      ['weekdays', 'Weekdays'],
-      ['weekly', 'Every week'],
-      ['biweekly', 'Every 2 weeks'],
-      ['monthly', 'Every month'],
-    ])
+    expect(screen.queryByRole('combobox', { name: 'Repeat' })).toBeNull()
   })
 
   it('decrypts every row and shows its status word', async () => {
@@ -524,16 +526,18 @@ describe('the sent list opens on this device', () => {
       await sentRow(K.me, { status: 'snoozed', snoozedUntil: now + 10 * 60_000 - 1000 }),
       await sentRow(K.me, { status: 'waiting' }),
       await sentRow(K.me, { status: 'waiting', dueAt: new Date(new Date(now + 86_400_000).setHours(9, 30, 0, 0)).getTime() }),
+      await sentRow(K.me, { status: 'queued', undelivered: true }),
     ]
     member(rows)
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Ping' })
     expect(view.container.querySelectorAll('.it')).toHaveLength(0)
-    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Sent: 9, new reply'))
+    await waitFor(() => expect(sentToggle()).toHaveAccessibleName('Sent: 10, new reply'))
     fireEvent.click(sentToggle())
-    await waitFor(() => expect(screen.getAllByText('Pošli mi fotky z hor')).toHaveLength(9))
-    expect(shownWords(view.container)).toEqual(['sending', 'popped up', 'seen', 'typing', 'reply', 'done', 'in 10 min', 'waiting', 'tomorrow 9:30'])
+    await waitFor(() => expect(screen.getAllByText('Pošli mi fotky z hor')).toHaveLength(10))
+    expect(shownWords(view.container)).toEqual(['sending', 'popped up', 'seen', 'typing', 'reply', 'done', 'in 10 min', 'waiting', 'tomorrow 9:30', 'not delivered'])
     expect(screen.getByText('Jdu na to')).toBeInTheDocument()
+    expect(screen.getByText(NOT_DELIVERED)).toBeInTheDocument()
     expect(view.container.querySelectorAll('.it.gone')).toHaveLength(1)
   })
 
@@ -591,6 +595,64 @@ describe('the sent list opens on this device', () => {
     fireEvent.click(sentToggle())
     expect(await screen.findByText('Za chvíli')).toBeInTheDocument()
     expect(mutation('messages:ackReply')).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('replies reach you outside the list', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    localStorage.removeItem('pingme.notify-asked')
+  })
+
+  it('counts unread replies in the tab title and notifies a new one only, while the tab is hidden', async () => {
+    const made: { title: string; body?: string }[] = []
+    class FakeNotification {
+      static permission = 'granted'
+      static requestPermission = vi.fn()
+      onclick: (() => void) | null = null
+      constructor(title: string, opts?: { body?: string }) {
+        made.push({ title, body: opts?.body })
+      }
+      close() {}
+    }
+    vi.stubGlobal('Notification', FakeNotification)
+    const old = await sentRow(K.me, { status: 'replied', replyText: 'Starší odpověď', replyAt: Date.now() - 60_000 })
+    member([old])
+    const view = render(<App />)
+    await waitFor(() => expect(document.title).toMatch(/^\(1\)/))
+    expect(made).toEqual([])
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    try {
+      const fresh = await sentRow(K.me, { status: 'replied', replyText: 'Jdu na to', replyAt: Date.now() })
+      member([fresh, old])
+      view.rerender(<App />)
+      await waitFor(() => expect(made).toEqual([{ title: REPLIED('Dominik'), body: 'Jdu na to' }]))
+      await waitFor(() => expect(document.title).toMatch(/^\(2\)/))
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    }
+  })
+
+  it('offers notifications once after the first ping, and asks the browser only on a click', async () => {
+    const requestPermission = vi.fn(async () => 'granted')
+    vi.stubGlobal('Notification', { permission: 'default', requestPermission })
+    member([await sentRow(K.me, { status: 'seen' })])
+    render(<App />)
+    const on = await screen.findByRole('button', { name: NOTIFY_ON })
+    expect(requestPermission).not.toHaveBeenCalled()
+    fireEvent.click(on)
+    expect(requestPermission).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('group', { name: NOTIFY_ASK })).toBeNull()
+    expect(localStorage.getItem('pingme.notify-asked')).not.toBeNull()
+  })
+
+  it('does not offer before anything was sent', async () => {
+    vi.stubGlobal('Notification', { permission: 'default', requestPermission: vi.fn() })
+    member([])
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Ping' })
+    expect(screen.queryByRole('group', { name: NOTIFY_ASK })).toBeNull()
   })
 })
 
@@ -663,7 +725,7 @@ describe('validation', () => {
     const view = render(<App />)
     await screen.findByRole('textbox', { name: 'Ping' })
     const forms = Array.from(view.container.querySelectorAll('form'))
-    expect(forms).toHaveLength(3)
+    expect(forms).toHaveLength(4)
     for (const form of forms) expect(form.noValidate).toBe(true)
     expect(view.container.querySelectorAll('[required], [pattern]')).toHaveLength(0)
     expect(screen.getByLabelText('Email', { selector: 'input' })).toHaveAttribute('type', 'email')
@@ -834,5 +896,82 @@ describe('validation', () => {
     expect(screen.getByText("That time doesn't work.")).toBeInTheDocument()
     fireEvent.change(day, { target: { value: '' } })
     expect(screen.getByText('Pick a day and time.')).toBeInTheDocument()
+  })
+})
+
+describe('new people', () => {
+  it('an invite link says who invites and what pingme is', async () => {
+    window.history.replaceState(null, '', '/?i=tok7')
+    h.queries['inviteLinks:check'] = { ok: true, name: 'Franta', inviterName: 'Viki' }
+    render(<App />)
+    expect(await screen.findByText('Viki invited you to pingme.')).toBeInTheDocument()
+    expect(screen.getByText(/right at the top of the Mac screen/)).toBeInTheDocument()
+  })
+
+  it("the invite names the inviter's email, which nobody can rename", async () => {
+    window.history.replaceState(null, '', '/?i=tok7')
+    h.queries['inviteLinks:check'] = { ok: true, name: 'Franta', inviterName: 'Viki', inviterEmail: 'viki@example.com' }
+    render(<App />)
+    expect(await screen.findByText('Viki (viki@example.com) invited you to pingme.')).toBeInTheDocument()
+  })
+
+  it('a name that is only the start of the email is not said twice', () => {
+    expect(inviterLabel('viki', 'viki@example.com')).toBe('viki@example.com')
+    expect(inviterLabel(undefined, 'viki@example.com')).toBe('viki@example.com')
+    expect(inviterLabel('Viki', undefined)).toBe('Viki')
+    expect(inviterLabel(undefined, undefined)).toBeUndefined()
+  })
+
+  it('a dead invite link says so instead of doing nothing', async () => {
+    window.history.replaceState(null, '', '/?i=old')
+    h.queries['inviteLinks:check'] = { ok: false }
+    h.signIn.mockRejectedValueOnce(new Error('NOT_INVITED'))
+    render(<App />)
+    expect(await screen.findByText('This invite link no longer works. Ask whoever sent it for a new one.')).toBeInTheDocument()
+    expect(localStorage.getItem('pingme.invite')).toBeNull()
+    await typeEmail('franta@example.com')
+    expect(await screen.findByText('No invite for this email. Ask for a new link.')).toBeInTheDocument()
+  })
+
+  it('without a Mac on the account: says pings cannot reach you, and Set up opens the agent panel', async () => {
+    member([], [dominik()], contactsView(K.me, [dominik()]))
+    render(<App />)
+    const notice = await screen.findByText("Pings can't reach you yet.")
+    const box = notice.closest('.dv-new') as HTMLElement
+    fireEvent.click(within(box).getByRole('button', { name: 'Set up the Mac' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Connect your agent/ })).toHaveAttribute('aria-expanded', 'true'))
+    fireEvent.click(within(box).getByRole('button', { name: 'Later' }))
+    await waitFor(() => expect(screen.queryByText("Pings can't reach you yet.")).toBeNull())
+  })
+
+  it('a Mac on the account: no such notice', async () => {
+    member()
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Ping' })
+    expect(screen.queryByText("Pings can't reach you yet.")).toBeNull()
+  })
+
+  it('tells once that someone joined, and later that they can get pings', async () => {
+    const jana = contact({ userId: 'u-jana', name: 'Jana' })
+    // This browser has seen Dominik before; Jana is new.
+    localStorage.setItem('pingme.contacts-known', JSON.stringify({ people: { [DOMINIK]: true } }))
+    member([], [dominik(), jana])
+    const view = render(<App />)
+    const joined = await screen.findByText('Jana joined pingme.')
+    fireEvent.click(within(joined.closest('.dv-new') as HTMLElement).getByRole('button', { name: 'OK' }))
+    await waitFor(() => expect(screen.queryByText('Jana joined pingme.')).toBeNull())
+    view.unmount()
+
+    member([], [dominik(), contact({ userId: 'u-jana', name: 'Jana' }, K.vikiMac)])
+    render(<App />)
+    expect(await screen.findByText('Jana can get pings now.')).toBeInTheDocument()
+  })
+
+  it('the first visit only learns the list', async () => {
+    member()
+    render(<App />)
+    await screen.findByRole('textbox', { name: 'Ping' })
+    expect(screen.queryByText(/joined pingme/)).toBeNull()
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('pingme.contacts-known') ?? '{}').people).toEqual({ [DOMINIK]: true }))
   })
 })

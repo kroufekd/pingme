@@ -273,7 +273,9 @@ the `url` is shown once.
 
 Joining (same flow as phase 1):
 
-- `inviteLinks.check` (query) `{ token }` -> `{ ok: true; name: string; inviterName?: string } | { ok: false }`
+- `inviteLinks.check` (query) `{ token }` -> `{ ok: true; name: string; inviterName?: string; inviterEmail?: string } | { ok: false }`.
+  No sign-in needed, so anyone holding a working link sees the inviter's name and sign-in email
+  (the one thing an inviter cannot rename, so the invited person knows who really sent it).
 - `inviteLinks.start` (mutation) `{ token, email }` -> `{ ok: true } | { ok: false; error: "bad-link" | "bad-email" }`
 - then the email code (Convex Auth), then `inviteLinks.claim` (mutation) `{ token, addContact?: boolean }` ->
   `{ ok: true; name: string } | { ok: false; error: "confirm"; inviterName: string } | { ok: false; error: "bad-link" | "wrong-email" | "signed-out" }`.

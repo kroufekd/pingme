@@ -20,6 +20,8 @@ export const me = query({
     v.object({
       status: v.literal("member"),
       name: v.string(),
+      /** Shown back to the member only: "signed in as". */
+      email: v.optional(v.string()),
       userId: v.string(),
       senderId: v.optional(v.string()),
       onboarded: v.boolean(),
@@ -37,11 +39,25 @@ export const me = query({
     return {
       status: "member" as const,
       name: cleanName(user.name) || sender?.name || nameOf(user),
+      ...(email ? { email } : {}),
       userId: userId as string,
       ...(sender ? { senderId: sender._id as string } : {}),
       onboarded: user.onboardedAt !== undefined,
       ...(inviter ? { inviterName: nameOf(inviter) } : {}),
     }
+  },
+})
+
+/** The member's own name, as contacts see it. Only members; empty or junk names are refused. */
+export const rename = mutation({
+  args: { name: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const m = await networkMember(ctx)
+    const name = cleanName(args.name)
+    if (!m || !name) return false
+    await ctx.db.patch(m.userId, { name })
+    return true
   },
 })
 

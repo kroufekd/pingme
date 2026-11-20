@@ -2,7 +2,7 @@
 # Installs pingme on this Mac: builds it, puts it in ~/Applications, starts it now and at every login and
 # connects the coding agents it finds (Claude Code, Codex, Cursor) to its local MCP server. It never
 # replaces an MCP server named "pingme" that points somewhere else. Safe to run again.
-# Optional, only with --with-session-hook: a Claude Code Stop hook that pings the island when a session
+# Optional, only with --with-session-hook: a Claude Code Stop hook that pings the island when a waiting session
 # finishes, and replies from the island into that session. It changes ~/.claude/settings.json.
 # After it, the island at the top of the screen shows "Connect this Mac": the person clicks it and
 # approves this Mac in the browser. An agent never approves anything.
@@ -54,6 +54,8 @@ cat > "$PLIST" <<PL
 PL
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 echo "Installed and started: $DEST"
+# Signed ad hoc, so every install is a new app to the Keychain. Denying leaves pingme without its key.
+echo "macOS may ask whether pingme can use its key in Keychain: click Always Allow. Each reinstall asks again."
 
 # Local MCP server "pingme" for the coding agents that exist here. An existing "pingme" entry is replaced
 # only when it already points at this app; one that points elsewhere belongs to someone else and stays.
@@ -139,7 +141,7 @@ PY
   fi
 fi
 
-# Optional Claude Code Stop hook: pings the island when a session finishes while you are elsewhere. It
+# Optional Claude Code Stop hook: pings the island when a session finishes waiting on you while you are elsewhere. It
 # copies the session's last prompt and answer (shortened) to this Mac's pingme folder, and lets a reply
 # typed on the island reach that session. Only with --with-session-hook.
 SETTINGS="$HOME/.claude/settings.json"

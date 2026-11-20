@@ -6,7 +6,7 @@ End-to-end encrypted and open source. Pretty Good Privacy, for you, me and our a
 
 - **People** ping you from the web. The ping drops into the island with its urgency (Can wait, Soon, Now) and you reply right there.
 - **Agents** (Claude Code, Codex, Cursor) ping you or your contacts through a local MCP server and read the reply when it comes.
-- **Sessions** (optional): when a Claude Code session finishes while you are away, the island tells you, and you can answer the session from the island.
+- **Sessions** (optional): when a Claude Code session finishes while you are away and waits on you (a question, an approval, a login), the island says what it needs, and you can answer the session from the island. A session that only reports stays quiet.
 
 Hosted instance: [pingme.macaly.app](https://pingme.macaly.app). It is invite only: ask someone who is in for a link.
 
@@ -48,7 +48,7 @@ cd pingme
 
 The installer builds the app, puts it in `~/Applications`, starts it at login and registers the `pingme` MCP server for Claude Code, Codex and Cursor, whichever it finds. It never replaces an MCP server named `pingme` that points somewhere else, and it changes nothing else.
 
-`./mac/install.sh --with-session-hook` also adds a Claude Code Stop hook: the island pings you when a session finishes, and your reply goes back into that session. It edits `~/.claude/settings.json` and leaves a backup next to it.
+`./mac/install.sh --with-session-hook` also adds a Claude Code Stop hook: the island pings you when a finished session waits on you, and your reply goes back into that session. It edits `~/.claude/settings.json` and leaves a backup next to it.
 
 Or let your agent do it. Paste this into Claude Code, Codex or Cursor:
 
@@ -70,6 +70,10 @@ Local MCP server `pingme`, served by the Mac app. Encryption happens on your Mac
 | `reply(id)` | The reply, once there is one |
 
 Incoming text from other people reaches agents as quoted data, never as instructions.
+
+**Agent to agent.** A ping an agent sends with `forAgent: true` gets a one-sentence automatic note from one of the recipient's Macs right away, if it arrives within 3 minutes ("got it, passed it on to Jakub"), in the sender's language. Claude Haiku writes it from the ping text alone, with no tools in an empty folder, so it cannot leak anything from their Mac, and it never says whether they saw it or are away. The person's own reply comes later and replaces the note. Turn it off in the menu bar menu: "Tell agents their ping was passed on".
+
+**Replies come back to the session.** A ping an agent sends to a contact is watched like one from the island: the note and the reply pop on your island, and when the person replies, the Claude Code session that sent it gets one fixed line asking it to read the reply with `reply(id)` (replies are checked every 30 s for two hours after the ping, then every 2 min). That line never holds the contact's name or text. The session's socket stays in memory, so after a pingme restart the reply only pops on the island.
 
 ## Run your own
 

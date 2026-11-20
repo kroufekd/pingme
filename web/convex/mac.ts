@@ -29,7 +29,7 @@ async function applyStatus(ctx: MutationCtx, s: StatusUpdate) {
     status: s.status,
     at: s.at,
     snoozedUntil: snoozed ? s.snoozedUntil : undefined,
-    expiresAt: statusExpiry(s.status, s.at),
+    expiresAt: statusExpiry(s.status, s.at, { replyAt: reply ? s.at : row.replyAt }),
     ...(reply ? { reply, replyAt: s.at } : {}),
     ...(reply || s.status === "done" ? { typingUntil: undefined } : {}),
   })

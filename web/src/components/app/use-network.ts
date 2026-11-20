@@ -7,7 +7,9 @@ import { isOnline, openRow, sendSealed } from '@/lib/network'
 import type { ContactsView, MineView, SentRow } from '@/lib/network'
 import { newRef } from '@/lib/seal'
 import type { Kind } from '@/lib/seal'
+import { autoNote } from '@/lib/tasks'
 import type { Row } from '@/lib/tasks'
+import { REPLIES, isLeaving, setLeaving } from '@/lib/forget'
 import { vaultGet, vaultSet } from '@/lib/vault'
 import type { NewTask, SendResult } from './task-form'
 
@@ -26,6 +28,7 @@ export function useDevice(enabled: boolean) {
 
   const ensure = useCallback(
     (again = false): Promise<Device> => {
+      if (isLeaving()) return Promise.resolve({ ...NO_DEVICE, settled: true })
       if (inflight.current && !again) return inflight.current
       const gen = generation.current
       const p = (async (): Promise<Device> => {
@@ -58,6 +61,7 @@ export function useDevice(enabled: boolean) {
       return
     }
     // Signed out: the next account registers this browser for itself.
+    setLeaving(false)
     generation.current += 1
     inflight.current = null
     setState(NO_DEVICE)
@@ -67,7 +71,6 @@ export function useDevice(enabled: boolean) {
 }
 
 type Local = { ref: string; toUserId: string; row: Row }
-const REPLIES = 'replies'
 const MAX_KEPT = 200
 
 /** Not scheduled: dueAt is the send time. Only a real plan shows its time. */
@@ -198,6 +201,13 @@ export function useSent({
       reply = kept[r.ref]
       replyMissing = reply === undefined
     }
+    // Their Mac's automatic note is not their reply: no badge, no notification, no "reply" status.
+    const note = autoNote(r.forAgent, reply)
+    if (note !== undefined) {
+      replyTexts.current.delete(r.ref)
+      reply = undefined
+      replyPending = false
+    }
     return {
       taskRef: r.ref,
       title: mineText ?? (typeof t === 'string' ? t : null),
@@ -206,16 +216,17 @@ export function useSent({
       to: r.forAgent ? 'agent' : 'person',
       toName: r.toName,
       offline: r.status === 'queued' && offline(r.toUserId),
+      undelivered: r.undelivered === true,
       dueAt: planned(r.dueAt, r.createdAt),
-      repeat: (r.repeat ?? undefined) as Row['repeat'],
-      status: r.status,
+      status: note !== undefined && r.status === 'replied' ? 'waiting' : r.status,
       statusAt: r.statusAt,
       snoozedUntil: r.snoozedUntil ?? undefined,
       typingUntil: r.typingUntil ?? undefined,
       reply,
       replyMissing,
-      replyAt: r.replyAt ?? undefined,
+      replyAt: note === undefined ? (r.replyAt ?? undefined) : undefined,
       replyPending,
+      note,
       createdAt: r.createdAt,
     }
   }
@@ -245,7 +256,6 @@ export function useSent({
         to: task.forAgent ? 'agent' : 'person',
         toName: v0?.status === 'member' ? (task.to === v0.me.userId ? v0.me.name : v0.contacts.find((c) => c.userId === task.to)?.name) : undefined,
         dueAt: planned(task.dueAt, at),
-        repeat: task.repeat,
         status: 'queued',
         statusAt: at,
         replyPending: false,
@@ -269,7 +279,6 @@ export function useSent({
           forAgent: task.forAgent,
           urgency: task.urgency,
           dueAt: task.dueAt,
-          repeat: task.repeat,
           recipientDevices: task.to === v.me.userId ? v.me.devices : (contact?.devices ?? []),
           myDevices: v.me.devices,
           own: dev.key && dev.deviceId ? { deviceId: dev.deviceId, publicKey: dev.key.publicKey } : null,

@@ -1,5 +1,4 @@
 import { dueLabel, snoozeLabel } from './time'
-import type { Repeat } from './time'
 
 // What the sent list shows. Network rows are mapped into this in use-network.ts.
 export type Urgency = 'green' | 'orange' | 'red'
@@ -19,8 +18,9 @@ export type Row = {
   toName?: string
   /** The recipient's Mac is not running: a queued ping shows "waiting". */
   offline?: boolean
+  /** No Mac of theirs came on in time: it will not arrive. */
+  undelivered?: boolean
   dueAt: number | null
-  repeat?: Repeat
   status: Status
   statusAt: number
   snoozedUntil?: number
@@ -31,13 +31,24 @@ export type Row = {
   replyAt?: number
   /** A reply this device has not marked as shown yet. */
   replyPending: boolean
+  /** The automatic "passed it on" note from their Mac, while their own reply has not come. */
+  note?: string
   createdAt: number
+}
+
+/** Starts the automatic note a recipient's Mac sends for a ping to their agent (AutoAck on the Mac). */
+export const AUTO_NOTE = '[auto] '
+
+/** The note without its marker, when a reply to a ping for an agent is that note. Not a reply then. */
+export function autoNote(forAgent: boolean, reply: string | undefined): string | undefined {
+  if (!forAgent || reply === undefined || !reply.startsWith(AUTO_NOTE)) return undefined
+  return reply.slice(AUTO_NOTE.length).trim() || undefined
 }
 
 export type Me =
   | { status: 'signedOut' }
   | { status: 'notMember'; email: string }
-  | { status: 'member'; name: string; userId: string; senderId?: string; onboarded?: boolean; inviterName?: string }
+  | { status: 'member'; name: string; email?: string; userId: string; senderId?: string; onboarded?: boolean; inviterName?: string }
 
 export const URGENCIES: { value: Urgency; word: string; cls: string }[] = [
   { value: 'green', word: 'Can wait', cls: 'u-g' },
@@ -49,22 +60,14 @@ export function urgencyOf(u: Urgency) {
   return URGENCIES.find((x) => x.value === u) ?? URGENCIES[0]
 }
 
-export const REPEAT_OPTIONS: { value: Repeat | ''; label: string }[] = [
-  { value: '', label: 'Once' },
-  { value: 'daily', label: 'Every day' },
-  { value: 'weekdays', label: 'Weekdays' },
-  { value: 'weekly', label: 'Every week' },
-  { value: 'biweekly', label: 'Every 2 weeks' },
-  { value: 'monthly', label: 'Every month' },
-]
-
 /** What the status cell shows. "typing" is not a server status, it wins while typingUntil is ahead. */
-export type Kind = 'queued' | 'waiting' | 'popped' | 'seen' | 'typing' | 'replied' | 'done' | 'snoozed'
-export const KINDS: Kind[] = ['queued', 'waiting', 'popped', 'seen', 'typing', 'replied', 'done', 'snoozed']
+export type Kind = 'queued' | 'waiting' | 'lost' | 'popped' | 'seen' | 'typing' | 'replied' | 'done' | 'snoozed'
+export const KINDS: Kind[] = ['queued', 'waiting', 'lost', 'popped', 'seen', 'typing', 'replied', 'done', 'snoozed']
 
 export const ICONS: Record<Exclude<Kind, 'typing'>, string> = {
   queued: 'send',
   waiting: 'clock',
+  lost: 'alert',
   popped: 'bell',
   seen: 'eye',
   replied: 'reply',
@@ -72,8 +75,10 @@ export const ICONS: Record<Exclude<Kind, 'typing'>, string> = {
   snoozed: 'snooze',
 }
 
-export function kindOf(row: Pick<Row, 'status' | 'typingUntil' | 'offline'>, now: number): Kind {
+export function kindOf(row: Pick<Row, 'status' | 'typingUntil' | 'offline' | 'undelivered'>, now: number): Kind {
   if (row.status !== 'done' && row.typingUntil !== undefined && row.typingUntil > now) return 'typing'
+  // Their Mac stayed off for a week after it was due: it will not arrive, say so instead of vanishing.
+  if (row.status === 'queued' && row.undelivered) return 'lost'
   // The server says queued until a Mac picks it up; with the Mac off it simply waits.
   if (row.status === 'queued' && row.offline) return 'waiting'
   return row.status
@@ -86,6 +91,8 @@ export function wordFor(kind: Kind, row: Pick<Row, 'dueAt' | 'snoozedUntil'>, no
       return 'sending'
     case 'waiting':
       return row.dueAt === null ? 'waiting' : dueLabel(row.dueAt, now)
+    case 'lost':
+      return 'not delivered'
     case 'popped':
       return 'popped up'
     case 'seen':
@@ -106,5 +113,6 @@ export function spokenFor(kind: Kind, row: Pick<Row, 'dueAt' | 'snoozedUntil'>, 
   const word = wordFor(kind, row, now)
   if (kind === 'waiting' && row.dueAt !== null) return `waiting, ${word}`
   if (kind === 'snoozed') return `snoozed, ${word}`
+  if (kind === 'lost') return "not delivered, their Mac stayed off"
   return word
 }

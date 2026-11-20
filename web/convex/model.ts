@@ -15,6 +15,12 @@ export const DAY = 24 * HOUR
 /** A done task stays visible to its sender this long, anything else a week after its last change. */
 export const DONE_TTL = DAY
 export const STATUS_TTL = 7 * DAY
+/** An undelivered message waits this long after it is due, then the recipient's Macs never get it. */
+export const MESSAGE_TTL = 7 * DAY
+/** After that the sender still sees "not delivered" this long. */
+export const UNDELIVERED_TTL = 3 * DAY
+/** A reply stays readable for its sender this long, whatever the recipient does with the ping later. */
+export const REPLY_TTL = 30 * DAY
 export const INVITE_TTL = 7 * DAY
 /** "Typing" lasts this long after the Mac reports typing. */
 export const TYPING_TTL = 6_000
@@ -167,8 +173,21 @@ export async function isWatching(ctx: QueryCtx, now: number) {
 
 // ---- Tasks ----
 
-export function statusExpiry(status: TaskState, at: number) {
-  return at + (status === "done" ? DONE_TTL : STATUS_TTL)
+/**
+ * When a status row goes. Counted from the later of its last change and the due time (a ping due in
+ * three weeks must not lose its row before it pops), kept for a not-delivered notice while queued,
+ * and never before a reply in it is a month old.
+ */
+export function statusExpiry(status: TaskState, at: number, row: { dueAt?: number; replyAt?: number } = {}) {
+  const from = Math.max(at, row.dueAt ?? 0)
+  const base =
+    status === "done" ? at + DONE_TTL : status === "queued" ? from + MESSAGE_TTL + UNDELIVERED_TTL : from + STATUS_TTL
+  return row.replyAt ? Math.max(base, row.replyAt + REPLY_TTL) : base
+}
+
+/** True when a queued message is past its delivery window: no Mac of the recipient will get it. */
+export function undelivered(status: TaskState, createdAt: number, dueAt: number, now: number) {
+  return status === "queued" && now > Math.max(createdAt, dueAt) + MESSAGE_TTL
 }
 
 /** Queues a new task from a sender and starts its status. The command id is the taskRef. */
@@ -205,7 +224,7 @@ export async function createTask(
     taskRef: id,
     status: "queued",
     at: now,
-    expiresAt: statusExpiry("queued", now),
+    expiresAt: statusExpiry("queued", now, { dueAt: task.dueAt }),
   })
   return id
 }

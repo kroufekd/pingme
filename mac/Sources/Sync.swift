@@ -21,8 +21,10 @@ final class SyncEngine {
     /// Pings the server confirmed as acked, so a late feed value does not trigger another sync.
     private var confirmedAt: [String: Date] = [:]
     /// Last contact list: reply targets and the people state.
+    /// Every fresh contact list, wherever it was loaded (People, sending, the periodic check).
+    var onContacts: ((ContactsReply) -> Void)?
     private(set) var contacts: ContactsReply?
-    private var contactsAt = Date.distantPast
+    private(set) var contactsAt = Date.distantPast
     private var typingRef: String?
     private var typingSentAt = Date.distantPast
     var onSynced: (() -> Void)?
@@ -145,6 +147,8 @@ final class SyncEngine {
     private func sendReply(_ e: StatusEvent, token: String) async -> Net.Outcome {
         let text = Net.cap(e.reply ?? "")
         guard !text.isEmpty else { return .drop }
+        // The owner replied (or is about to) since the automatic note was queued: it would replace their answer.
+        if e.auto == true, store.ackStale(e.taskRef) { return .drop }
         if Net.sendsPlain(e) {
             guard let r = try? await api.reply(token: token, ref: e.taskRef, at: e.at, envelopes: nil, text: text) else {
                 return .retryLater
@@ -194,12 +198,43 @@ final class SyncEngine {
             guard identity?.token == token else { break }
             contacts = c
             contactsAt = Date()
+            onContacts?(c)
         case .failure(.unauthorized):
             unauthorized(token)
         case .failure:
             break
         }
         return r
+    }
+
+    /// A ping typed on the island to a contact: sealed on this Mac like an agent's, sent as the person.
+    func ping(to userId: String, text: String, urgency: Urgency, dueAt: Date?) async
+        -> Result<(ref: String, target: MCPTools.Target), MCPTools.SendFailure> {
+        guard let token = identity?.token else { return .failure(.api(.unauthorized)) }
+        let c: ContactsReply
+        switch await loadContacts() {
+        case .success(let x): c = x
+        case .failure(let e): return .failure(.api(e))
+        }
+        guard case .success(let t) = MCPTools.resolve(userId, in: c), !t.isMe else { return .failure(.notContact) }
+        let due = dueAt.map(\.ms).flatMap { $0 > Date().ms + 30_000 ? $0 : nil }
+        let r = await MCPTools.deliver(text: text, urgency: urgency.rawValue, forAgent: false, dueAt: due, fromAgent: nil,
+                                        to: t, me: c.me, token: token, api: api)
+        if case .failure(.api(.unauthorized)) = r { unauthorized(token) }
+        return r.map { ($0, t) }
+    }
+
+    /// The server's rows for these sent pings (at most 50).
+    func sent(refs: [String]) async -> Result<[SentRow], ApiError> {
+        guard let token = identity?.token else { return .failure(.unauthorized) }
+        let r = await api.sent(token: token, refs: Array(refs.prefix(50)))
+        if case .failure(.unauthorized) = r { unauthorized(token) }
+        return r.map(\.rows)
+    }
+
+    func openReply(_ row: SentRow) -> String? {
+        guard let key else { return nil }
+        return Net.open(row.reply, kind: .reply, row: row, key: key)
     }
 
     func invites() async -> Result<[Invite], ApiError> {

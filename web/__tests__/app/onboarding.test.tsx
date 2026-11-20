@@ -21,6 +21,11 @@ vi.mock('convex/react', async () => {
       if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => null)
       return h.mutations[name]
     },
+    useAction: (ref: never) => {
+      const name = getFunctionName(ref)
+      if (!h.mutations[name]) h.mutations[name] = vi.fn(async () => null)
+      return h.mutations[name]
+    },
   }
 })
 

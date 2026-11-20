@@ -32,6 +32,8 @@ type Open = {
   name: string
   inviterId: Id<"users"> | null
   inviterName?: string
+  /** The inviter's sign-in email: the one thing on the invite page nobody can rename. */
+  inviterEmail?: string
   sender: Doc<"senders"> | null
 }
 
@@ -47,28 +49,49 @@ async function openLink(ctx: QueryCtx, token: string, now: number): Promise<Open
   if (link.inviterId) {
     const inviter = await memberOf(ctx, link.inviterId)
     if (!inviter) return null
-    return { link, name: link.name ?? "", inviterId: link.inviterId, inviterName: nameOf(inviter), sender: null }
+    return {
+      link,
+      name: link.name ?? "",
+      inviterId: link.inviterId,
+      inviterName: nameOf(inviter),
+      inviterEmail: inviter.email ? normalizeEmail(inviter.email) : undefined,
+      sender: null,
+    }
   }
   if (!link.senderId) return null
   const sender = await ctx.db.get(link.senderId)
   if (!sender || sender.kind !== "person" || sender.status !== "invited") return null
   const owner = await ownerUser(ctx)
-  return { link, name: sender.name, inviterId: null, inviterName: owner ? nameOf(owner) : undefined, sender }
+  return {
+    link,
+    name: sender.name,
+    inviterId: null,
+    inviterName: owner ? nameOf(owner) : undefined,
+    inviterEmail: owner?.email ? normalizeEmail(owner.email) : undefined,
+    sender,
+  }
 }
 
-/** Whether an invite link still works, the invited name and who invites. Says nothing else. */
+/**
+ * Whether an invite link still works, the invited name and who invites (name and sign-in email, so
+ * the invited person can tell it is really them). Anyone holding a working link sees that email; a
+ * dead link says nothing at all.
+ */
 export const check = query({
   args: { token: v.string() },
   returns: v.union(
-    v.object({ ok: v.literal(true), name: v.string(), inviterName: v.optional(v.string()) }),
+    v.object({ ok: v.literal(true), name: v.string(), inviterName: v.optional(v.string()), inviterEmail: v.optional(v.string()) }),
     v.object({ ok: v.literal(false) }),
   ),
   handler: async (ctx, { token }) => {
     const open = await openLink(ctx, token, Date.now())
     if (!open) return { ok: false as const }
-    return open.inviterName === undefined
-      ? { ok: true as const, name: open.name }
-      : { ok: true as const, name: open.name, inviterName: open.inviterName }
+    return {
+      ok: true as const,
+      name: open.name,
+      ...(open.inviterName === undefined ? {} : { inviterName: open.inviterName }),
+      ...(open.inviterEmail === undefined ? {} : { inviterEmail: open.inviterEmail }),
+    }
   },
 })
 

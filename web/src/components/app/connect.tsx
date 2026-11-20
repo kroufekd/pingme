@@ -9,6 +9,8 @@ const LABEL = 'Connect your agent'
 export const COPY = 'Copy prompt'
 export const COPIED = 'Copied'
 const HINT = 'Paste this into Claude Code, Codex or Cursor.'
+export const MANUAL_CMD = `git clone ${REPO_URL}.git && ./pingme/mac/install.sh`
+const MANUAL = 'No agent? Paste this into Terminal instead (it needs the Xcode Command Line Tools):'
 // On a phone the address wraps after a slash, not in the middle of a word.
 const PROMPT_PARTS = AGENT_PROMPT.split(/(?<=\.com\/|kroufekd\/)/)
 const BRANDS = [
@@ -119,8 +121,11 @@ export function ConnectAgent({ open, onOpenChange, side, below }: { open: boolea
               </button>
               {shot > 0 && <span key={shot} className="cn-sweep" aria-hidden="true" />}
             </div>
+            <p className="cn-alt rv-i" style={slot(2)}>
+              {MANUAL} <code className="cn-alt-c">{MANUAL_CMD}</code>
+            </p>
             <ul className="cn-safe">
-              <li className="rv-i" style={slot(2)}>
+              <li className="rv-i" style={slot(3)}>
                 <span className="cn-safe-i">
                   <Lock size={15} />
                 </span>
@@ -128,7 +133,7 @@ export function ConnectAgent({ open, onOpenChange, side, below }: { open: boolea
                   <b>End-to-end encrypted.</b> Pings are sealed on your devices, so the server can't read them.
                 </span>
               </li>
-              <li className="rv-i" style={slot(3)}>
+              <li className="rv-i" style={slot(4)}>
                 <span className="cn-safe-i">
                   <Icon name="laptop" size={15} />
                 </span>
@@ -136,7 +141,7 @@ export function ConnectAgent({ open, onOpenChange, side, below }: { open: boolea
                   <b>You connect the Mac.</b> The agent installs the app; you approve it here with the code your Mac shows.
                 </span>
               </li>
-              <li className="rv-i" style={slot(4)}>
+              <li className="rv-i" style={slot(5)}>
                 <span className="cn-safe-i">
                   <Icon name="eye" size={15} />
                 </span>

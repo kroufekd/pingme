@@ -97,6 +97,8 @@ struct TodoTask: Codable, Identifiable, Equatable {
     var report: String? = nil
     /// running, done or failed.
     var triage: String? = nil
+    /// The automatic reply to a sender's agent (`AutoAck`): pending, sent or skipped. Nil: none is due.
+    var ack: String? = nil
     // Network. The ping's sender and recipient, as the AAD of its reply needs them.
     var fromUserId: String? = nil
     var toUserId: String? = nil
@@ -116,6 +118,7 @@ struct TodoTask: Codable, Identifiable, Equatable {
     var isAgentSession: Bool { source == "agent" }
     var forAgent: Bool { to == "agent" }
     var triaging: Bool { triage == "running" }
+    var ackPending: Bool { ack == "pending" }
     func isSnoozed(at now: Date) -> Bool { (snoozedUntil ?? 0) > now.ms }
 
     /// Who the task is from, as the island shows it.
@@ -126,6 +129,7 @@ struct TodoTask: Codable, Identifiable, Equatable {
             switch source {
             case "web": return createdByName
             case "followup": return "Next step"
+            case "network": return createdByName.isEmpty ? "pingme" : createdByName
             case "agent": return createdByName
             default: return "Reminder"
             }
@@ -160,6 +164,8 @@ struct StatusEvent: Codable, Equatable {
     var from: String? = nil
     var to: String? = nil
     var plain: Bool? = nil
+    /// The automatic reply to a ping for the agent, not one the owner wrote.
+    var auto: Bool? = nil
 
     var isReply: Bool { status == "replied" }
 
@@ -321,11 +327,31 @@ final class TaskStore: ObservableObject {
         return lastAt
     }
 
-    private func emit(_ t: TodoTask, _ status: String, snoozedUntil: Double? = nil, reply: String? = nil) {
+    private func emit(_ t: TodoTask, _ status: String, snoozedUntil: Double? = nil, reply: String? = nil, auto: Bool = false) {
         guard let ref = t.taskRef else { return }
         outbox.append(StatusEvent(uid: UUID().uuidString, taskRef: ref, status: status, at: stamp(),
                                   snoozedUntil: snoozedUntil, reply: reply, from: t.fromUserId, to: t.toUserId,
-                                  plain: t.plain))
+                                  plain: t.plain, auto: auto ? true : nil))
+    }
+
+    /// The automatic reply for a ping to the agent (nil text: none, it is off). It goes to the sender like
+    /// a reply, but the task stays unanswered here. Not once the owner replied: on the server a later
+    /// reply replaces the earlier one, so a late note must never land on top of the owner's answer.
+    func queueAck(_ id: String, text: String?) {
+        guard let t = task(id), t.ackPending else { return }
+        let send = text != nil && !ackStale(t.taskRef)
+        _ = update(id) { $0.ack = send ? "sent" : "skipped" }
+        if send { emit(t, "replied", reply: text, auto: true) }
+        commit()
+    }
+
+    /// True when an automatic reply for this ping must not go (any more): the owner replied, is about
+    /// to, or the ping is done.
+    func ackStale(_ ref: String?) -> Bool {
+        guard let ref else { return true }
+        if outbox.contains(where: { $0.isReply && $0.auto != true && $0.taskRef == ref }) { return true }
+        guard let t = pending.first(where: { $0.taskRef == ref }) else { return true }
+        return t.reply != nil
     }
 
     private func update(_ id: String, _ change: (inout TodoTask) -> Void) -> TodoTask? {
@@ -391,18 +417,7 @@ final class TaskStore: ObservableObject {
                 source: "followup", createdByName: t.createdByName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
                 followUpTitle: nil, followUpMinutes: nil, followsFrom: t.title, urgency: t.urgency))
         }
-        if let rule = t.repeat, let next = Recurrence.next(rule: rule, from: t.dueAt, after: Date()) {
-            // The next occurrence keeps who sent it and its taskRef, under a new local id.
-            let n = TodoTask(
-                _id: UUID().uuidString, title: t.title, dueAt: next, createdAt: now,
-                source: t.source, createdByName: t.createdByName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
-                followUpTitle: t.followUpTitle, followUpMinutes: t.followUpMinutes, followsFrom: nil, repeat: rule,
-                senderId: t.senderId, senderKind: t.senderKind, urgency: t.urgency, taskRef: t.taskRef,
-                stage: t.taskRef == nil ? nil : "waiting", fromUserId: t.fromUserId, toUserId: t.toUserId,
-                fromAgent: t.fromAgent, plain: t.plain)
-            pending.append(n)
-            emit(n, "waiting")
-        }
+        // Repeating pings are gone: a task saved with a repeat rule ends here like any other.
         commit()
     }
 
@@ -422,14 +437,25 @@ final class TaskStore: ObservableObject {
 
     func delete(_ id: String) { pending.removeAll { $0.id == id }; commit() }
 
-    func add(title: String, dueAt: Date, urgency: Urgency, repeat rule: String?) {
+    func add(title: String, dueAt: Date, urgency: Urgency) {
         let title = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(kTitleMax))
         guard !title.isEmpty else { return }
         pending.append(TodoTask(
             _id: UUID().uuidString, title: title, dueAt: dueAt.ms, createdAt: Date().ms,
             source: "mac", createdByName: "Mac", doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
             followUpTitle: nil, followUpMinutes: nil, followsFrom: nil,
-            repeat: Recurrence.valid(rule), urgency: urgency.rawValue))
+            urgency: urgency.rawValue))
+        commit()
+    }
+
+    /// A note from the app itself ("Michal joined pingme"). Local only: no taskRef, so nothing is sent.
+    func notice(id: String, title: String, from: String = "pingme") {
+        guard !pending.contains(where: { $0.id == id }) else { return }
+        let now = Date().ms
+        pending.append(TodoTask(
+            _id: id, title: String(title.prefix(kTitleMax)), dueAt: now, createdAt: now,
+            source: "network", createdByName: from, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
+            followUpTitle: nil, followUpMinutes: nil, followsFrom: nil, urgency: Urgency.green.rawValue))
         commit()
     }
 
@@ -448,13 +474,14 @@ final class TaskStore: ObservableObject {
                 _id: p.ref, title: String(p.title.prefix(kTitleMax)), dueAt: p.dueAt, createdAt: p.createdAt,
                 source: "web", createdByName: p.fromName, doneAt: nil, snoozedUntil: nil, snoozeCount: 0,
                 followUpTitle: nil, followUpMinutes: nil, followsFrom: nil,
-                repeat: Recurrence.valid(p.repeat),
+                // A repeat rule from an older sender is ignored: every ping pops once.
                 senderId: p.fromUserId, senderKind: p.fromAgent == nil ? "person" : "agent",
                 urgency: (Urgency(rawValue: p.urgency) ?? .green).rawValue,
                 taskRef: p.ref,
                 to: p.forAgent ? "agent" : nil,
                 // Nothing to triage in a placeholder.
                 triage: p.forAgent && !p.unreadable ? "running" : nil,
+                ack: AutoAck.due(p, now: Date().ms) ? "pending" : nil,
                 fromUserId: p.fromUserId, toUserId: p.toUserId, fromAgent: p.fromAgent,
                 plain: p.plain ? true : nil, unreadable: p.unreadable ? true : nil))
         }
@@ -479,8 +506,8 @@ final class TaskStore: ObservableObject {
 
     // MARK: Agent
 
-    /// A Claude Code session finished. One item per session: a later finish replaces the text and pops again.
-    /// A session finished. It waits up to `hold` seconds for its name and recap (`finishAgentSession`).
+    /// A session finished. It stays hidden up to `hold` seconds, until the recap says whether it waits on the
+    /// owner (`finishAgentSession`) or not (`dropAgentSession`). A later finish of the same session replaces it.
     func upsertAgentSession(session: String, project: String, text: String, hold: TimeInterval = 0) {
         let id = "agent-\(session)"
         let now = Date().ms + hold * 1000
@@ -510,6 +537,14 @@ final class TaskStore: ObservableObject {
             if let text { $0.title = text }
             $0.dueAt = min($0.dueAt, Date().ms)
         }
+        commit()
+    }
+
+    /// The session finished without waiting on the owner: it never pops. A newer finish of the same session wins.
+    func dropAgentSession(session: String, ifStill quick: String) {
+        let id = "agent-\(session)"
+        guard pending.first(where: { $0.id == id })?.title == quick else { return }
+        pending.removeAll { $0.id == id }
         commit()
     }
 

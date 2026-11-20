@@ -1,11 +1,10 @@
 import { useRef, useState } from 'react'
 import type { FormEvent, ReactNode, Ref } from 'react'
 import { agentPlaceholder, pingPlaceholder } from '@/lib/people'
-import { REPEAT_OPTIONS, URGENCIES, urgencyOf } from '@/lib/tasks'
+import { URGENCIES, urgencyOf } from '@/lib/tasks'
 import type { Urgency } from '@/lib/tasks'
 import { DAY_MS, MAX_DAYS, dateTime, dayKey, laterDefault, timeKey } from '@/lib/time'
 import { charsLeft, checkLater } from '@/lib/validate'
-import type { Repeat } from '@/lib/time'
 import { Icon } from './icon'
 import { TimeField } from './time-field'
 import { NO_APP, PeoplePicker } from './people-picker'
@@ -15,7 +14,7 @@ import { useNudge } from './sign-in'
 export const MAX_TITLE = 200
 
 /** `to` is the recipient's userId; `forAgent` sends it to their agent instead. */
-export type NewTask = { title: string; urgency: Urgency; dueAt: number; repeat?: Repeat; to: string; forAgent: boolean }
+export type NewTask = { title: string; urgency: Urgency; dueAt: number; to: string; forAgent: boolean }
 export type SendResult = { ok: true } | { ok: false; error: string }
 
 const NOTES: Record<string, string> = {
@@ -26,6 +25,7 @@ const NOTES: Record<string, string> = {
   'rate-limited': 'Too many pings. Try again in a moment.',
 }
 const FAILED = "Didn't send. Try again."
+export const NO_APP_FOR = (name: string) => `${name.split(' ')[0]} hasn't set up the Mac app yet, so pings can't reach them.`
 const EMPTY = 'Write what you need.'
 const AGENT = 'Agent'
 const LATER = 'Send later'
@@ -64,7 +64,6 @@ export function TaskForm({
   const [later, setLater] = useState(false)
   const [day, setDay] = useState('')
   const [time, setTime] = useState('')
-  const [repeat, setRepeat] = useState<Repeat | ''>('')
   const [note, setNote] = useState<string | null>(null)
   // Counts sends, only to replay the send animation.
   const [flown, setFlown] = useState(0)
@@ -95,7 +94,7 @@ export function TaskForm({
     }
     if (blocked || !chosen) {
       nudge()
-      if (chosen) setNote(NOTES['no-device'])
+      if (chosen) setNote(chosen.self ? NOTES['no-device'] : NO_APP_FOR(chosen.name))
       return
     }
     const now = Date.now()
@@ -109,8 +108,8 @@ export function TaskForm({
       }
       dueAt = when.at
     }
-    const task: NewTask = { title: text, urgency, dueAt, repeat: later && repeat && !forAgent ? repeat : undefined, to: chosen.userId, forAgent }
-    const before = { title, urgency, later, day, time, repeat }
+    const task: NewTask = { title: text, urgency, dueAt, to: chosen.userId, forAgent }
+    const before = { title, urgency, later, day, time }
 
     // The row is in the sent list right away, the form is ready for the next one.
     setNote(null)
@@ -118,7 +117,6 @@ export function TaskForm({
     setTitle('')
     setUrgency('green')
     setLater(false)
-    setRepeat('')
     titleRef.current?.focus()
 
     const res = await onSend(task)
@@ -131,7 +129,6 @@ export function TaskForm({
       setLater(before.later)
       setDay(before.day)
       setTime(before.time)
-      setRepeat(before.repeat)
     }
   }
 
@@ -141,9 +138,10 @@ export function TaskForm({
   // The same check as on send, shown as soon as the picked time is off.
   const when = laterOn ? checkLater(day, time, Date.now()) : null
   const laterBad = when && !when.ok ? NOTES[when.error] : null
-  const shownNote = note ?? laterBad
+  // A contact without the app is said right away, not after a send that cannot work.
+  const noApp = blocked && chosen && !chosen.self ? NO_APP_FOR(chosen.name) : null
+  const shownNote = note ?? laterBad ?? noApp
   const left = charsLeft(title.length, MAX_TITLE)
-  const repeatWord = repeat ? REPEAT_OPTIONS.find((r) => r.value === repeat)?.label : undefined
   const cls = ['ps', 'pf', urgencyOf(urgency).cls, on ? 'on' : '', title.trim() ? 'has' : '', empty || (note && !laterBad) ? 'bad' : ''].filter(Boolean).join(' ')
 
   return (
@@ -299,17 +297,6 @@ export function TaskForm({
             setNote(null)
           }}
         />
-        <label className={repeat ? 'chip rep set' : 'chip rep'} title="Repeat">
-          <Icon name="repeat" size={16} />
-          {repeatWord && <span aria-hidden="true">{repeatWord}</span>}
-          <select aria-label="Repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as Repeat | '')}>
-            {REPEAT_OPTIONS.map((r) => (
-              <option key={r.value || 'once'} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
     </form>
   )

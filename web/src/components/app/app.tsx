@@ -4,25 +4,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { clearInvite, loadInvite, loadOtpEmail, saveOtpEmail } from '@/lib/invite'
 import { isOnline } from '@/lib/network'
-import type { ContactsView, MyDevice } from '@/lib/network'
+import type { Contact, ContactsView, MyDevice } from '@/lib/network'
 import type { Me } from '@/lib/tasks'
 import { useNow } from '@/lib/time'
+import { forgetBrowser, setLeaving } from '@/lib/forget'
+import { Account } from './account'
 import { ConnectAgent } from './connect'
 import { Icon } from './icon'
 import { NewMacNotice, useDeviceList } from './devices'
+import { usePeopleList } from './people-list'
+import { NotifyOffer, useReplyAlerts } from './reply-alerts'
+import { ContactNews, NoMacNotice } from './notices'
 import { Onboarding, needsOnboarding } from './onboarding'
 import { PairPanel } from './pair'
 import { ME } from './people-picker'
 import type { Person } from './people-picker'
 import { CodePanel, EmailPanel } from './sign-in'
+import type { Welcome } from './sign-in'
 import { SentList, SentToggle, hasUnseenReply } from './task-list'
 import { TaskForm } from './task-form'
 import { useDevice, useSent } from './use-network'
 
 type Phase = 'loading' | 'email' | 'code' | 'form'
 const NO_DEVICES: MyDevice[] = []
+const NO_CONTACTS: Contact[] = []
 
 const HINT_NO_CODE = "Couldn't send a code to this email."
+const HINT_DEAD_LINK = 'No invite for this email. Ask for a new link.'
 const HINT_NOT_MEMBER = 'This email has no invite.'
 const HINT_BAD_EMAIL = 'Check the email.'
 const HINT_BAD_CODE = "That code doesn't match."
@@ -67,10 +75,21 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const me: Me | undefined = useQuery(api.senders.me, mounted && isAuthenticated ? {} : 'skip')
   const check = useQuery(api.inviteLinks.check, mounted && invite && !isAuthenticated ? { token: invite } : 'skip')
 
-  // A dead link (invalid, expired, used): plain email sign-in, same screen.
+  // A dead link (invalid, expired, used): plain email sign-in, and a line that says why.
+  const [deadInvite, setDeadInvite] = useState(false)
   useEffect(() => {
-    if (check && !check.ok) forgetInvite()
+    if (check && !check.ok) {
+      setDeadInvite(true)
+      forgetInvite()
+    }
   }, [check, forgetInvite])
+  const welcome: Welcome | null = check?.ok
+    ? { kind: 'invited', inviter: check.inviterName, inviterEmail: check.inviterEmail }
+    : deadInvite
+      ? { kind: 'dead' }
+      : invite
+        ? null
+        : { kind: 'plain' }
 
   // Signed in: the code step is over.
   useEffect(() => {
@@ -136,9 +155,25 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const sent = useSent({ enabled: network, device, view: contacts, now })
   const contactList = contacts?.status === 'member' ? contacts.contacts : null
   const myDevices = contacts?.status === 'member' ? contacts.me.devices : null
-  // "Connect your agent" and "Devices" share one row and open one at a time.
-  const [drawer, setDrawer] = useState<'agent' | 'devices' | null>(null)
-  const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null))
+  // "Connect your agent", "People" and "Devices" share one row and open one at a time.
+  const [drawer, setDrawer] = useState<'agent' | 'people' | 'devices' | null>(null)
+  const revokeDevice = useMutation(api.devices.revoke)
+  // Signing out forgets this browser too: its device on the account, its key and what it kept.
+  const signOutHere = useCallback(async () => {
+    // From here on nothing registers this browser again, though the revoke makes it look lost.
+    setLeaving(true)
+    try {
+      if (device.deviceId) await revokeDevice({ deviceId: device.deviceId }).catch(() => {})
+      await forgetBrowser()
+      setDrawer(null)
+      await signOut()
+    } catch {
+      setLeaving(false)
+    }
+  }, [device.deviceId, revokeDevice, signOut])
+  const account = me?.status === 'member' ? <Account name={me.name} email={me.email} onSignOut={signOutHere} /> : undefined
+  const deviceList = useDeviceList(myDevices ?? NO_DEVICES, device.deviceId, now, drawer === 'devices', (o) => setDrawer(o ? 'devices' : null), account)
+  const peopleList = usePeopleList(contactList ?? NO_CONTACTS, now, drawer === 'people', (o) => setDrawer(o ? 'people' : null), contactList !== null)
   const meView = contacts?.status === 'member' ? contacts.me : null
   const people: Person[] | null = useMemo(() => {
     if (!contactList || !meView) return null
@@ -168,8 +203,8 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
       setCodeHint(null)
       setOtpEmail(address)
     } catch {
-      // Not on the list, or the code could not be sent. Same quiet answer.
-      setEmailHint(HINT_NO_CODE)
+      // Not on the list, or the code could not be sent. Same quiet answer, unless the link was dead.
+      setEmailHint(deadInvite ? HINT_DEAD_LINK : HINT_NO_CODE)
       setBusy(false)
     }
   }
@@ -213,26 +248,33 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
   const listReady = home && shown === 'form' && sent.loaded
   // The intro names who invited them (or their first contact) and waits for that, so no name flashes.
   const introName = me?.status === 'member' ? (me.inviterName ?? contactList?.[0]?.name) : undefined
+  useReplyAlerts(sent.rows, listReady)
   return (
     <main className="screen">
       <h1 className="vh">pingme</h1>
-      {/* A Mac that joins the account can read every ping to it: never let that pass unseen. */}
-      {home && shown === 'form' && myDevices && <NewMacNotice devices={myDevices} thisId={device.deviceId} now={now} />}
-      {home && shown === 'form' && askAdd && invite && (
-        <ContactRequest
-          name={askAdd}
-          onAnswer={async (yes) => {
-            if (yes) {
-              const res = await claimInvite({ token: invite, addContact: true })
-              if (!res.ok && res.error !== 'bad-link') return
-            }
-            setAskAdd(null)
-            forgetInvite()
-          }}
-        />
-      )}
+      <div className="notices">
+        {/* A Mac that joins the account can read every ping to it: never let that pass unseen. */}
+        {home && shown === 'form' && myDevices && <NewMacNotice devices={myDevices} thisId={device.deviceId} now={now} />}
+        {home && shown === 'form' && askAdd && invite && (
+          <ContactRequest
+            name={askAdd}
+            onAnswer={async (yes) => {
+              if (yes) {
+                const res = await claimInvite({ token: invite, addContact: true })
+                if (!res.ok && res.error !== 'bad-link') return
+              }
+              setAskAdd(null)
+              forgetInvite()
+            }}
+          />
+        )}
+        {home && shown === 'form' && contactList && <ContactNews contacts={contactList} />}
+        {home && shown === 'form' && myDevices && !myDevices.some((d) => d.kind === 'mac') && <NoMacNotice onSetUp={() => setDrawer('agent')} />}
+        {/* Asked once, from a click, after the first ping went out. */}
+        <NotifyOffer show={listReady && sent.rows.length > 0} />
+      </div>
       <div className="stage" data-phase={shown} aria-busy={waiting || busy || undefined}>
-        <EmailPanel on={shown === 'email'} busy={busy || waiting} hint={emailHint} initialEmail={email} onSubmit={(a) => void sendCode(a)} />
+        <EmailPanel on={shown === 'email'} busy={busy || waiting} hint={emailHint} initialEmail={email} welcome={welcome} onSubmit={(a) => void sendCode(a)} />
         <CodePanel on={shown === 'code'} busy={busy || waiting} hint={codeHint} email={otpEmail ?? ''} onSubmit={verify} onBack={backToEmail} />
         {home ? (
           <TaskForm
@@ -250,7 +292,7 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
             }
           />
         ) : (
-          <PairPanel on={shown === 'form'} />
+          <PairPanel on={shown === 'form'} account={me?.status === 'member' ? (me.email ?? me.name) : undefined} />
         )}
       </div>
       {listReady && <SentList rows={sent.rows} keyOf={sent.keyOf} onAck={sent.onAck} open={listOpen} showWho={showWho} />}
@@ -258,8 +300,22 @@ export function App({ view = 'home' }: { view?: 'home' | 'pair' }) {
         <ConnectAgent
           open={drawer === 'agent'}
           onOpenChange={(o) => setDrawer(o ? 'agent' : null)}
-          side={myDevices && deviceList.toggle}
-          below={myDevices && deviceList.panel}
+          side={
+            myDevices && (
+              <span className="cn-side">
+                {peopleList.toggle}
+                {deviceList.toggle}
+              </span>
+            )
+          }
+          below={
+            myDevices && (
+              <>
+                {peopleList.panel}
+                {deviceList.panel}
+              </>
+            )
+          }
         />
       )}
       {/* Once per account, after the contacts are known. The text is end-to-end encrypted. */}

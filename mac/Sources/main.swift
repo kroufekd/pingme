@@ -34,12 +34,12 @@ if args.contains("--snapshot-island") || args.contains("--snapshot-alert") {
     let states = SnapshotState.allCases.map(\.rawValue).joined(separator: "|")
     guard let out = value(after: "--snapshot-island") ?? value(after: "--snapshot-alert"), !out.hasPrefix("--"),
           let state = SnapshotState(rawValue: value(after: "--state") ?? "task-red") else {
-        fputs("usage: --snapshot-island out.png [--state \(states)] [--fake] [--real] [--appkit]\n", stderr)
+        fputs("usage: --snapshot-island out.png [--state \(states)] [--fake] [--real] [--appkit] [--fly 0...1]\n", stderr)
         exit(2)
     }
     let ok = MainActor.assumeIsolated {
         renderSnapshot(state: state, to: out, fake: args.contains("--fake"), appKit: args.contains("--appkit"),
-                       real: args.contains("--real"))
+                       real: args.contains("--real"), fly: value(after: "--fly").flatMap(Double.init))
     }
     exit(ok ? 0 : 1)
 }

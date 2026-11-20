@@ -425,6 +425,32 @@ body {
     animation: u-note 0.45s var(--spring);
   }
 
+  /* Who invites, or why a link did nothing: above the error line, in the white space. */
+  .ps-lead {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 52px);
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--ink-2);
+    text-wrap: pretty;
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity 0.4s var(--ease),
+      transform 0.5s var(--spring);
+  }
+  .ps-lead.on {
+    opacity: 1;
+    transform: none;
+  }
+  .ps-lead b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
   .ps-note.short {
     right: 4ch;
   }
@@ -715,7 +741,7 @@ body {
     animation: u-ring 1.6s var(--ease) 0.4s 2;
   }
 
-  /* ---- later: day, time, repeat. Its row is always there, so nothing below moves. ---- */
+  /* ---- later: day and time. Its row is always there, so nothing below moves. ---- */
   .pf-later {
     display: flex;
     align-items: center;
@@ -775,28 +801,6 @@ body {
   input.chip::-webkit-date-and-time-value {
     text-align: left;
   }
-  .chip.rep {
-    color: var(--quiet);
-    cursor: pointer;
-    transition: color 0.25s var(--ease);
-  }
-  .chip.rep.set {
-    color: var(--ink);
-  }
-  .chip.rep select {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  .chip.rep:focus-within {
-    outline: 2px solid var(--ink);
-    outline-offset: 3px;
-  }
-
   /* ---- time: on a desktop our own list instead of the browser's grey one ---- */
   .tf {
     position: relative;
@@ -1022,6 +1026,14 @@ body {
   }
   .st .ok {
     color: var(--g-ink);
+  }
+  .st .bad {
+    color: var(--r-ink);
+  }
+  .it-lost {
+    color: var(--r-ink);
+    font-size: 14px;
+    line-height: 20px;
   }
   .dots3 {
     display: inline-flex;
@@ -2595,6 +2607,60 @@ body vite-error-overlay {
   .dv-this-n {
     color: var(--ink-2);
   }
+  /* ---- account: who is signed in, rename, sign out ---- */
+  .ac {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-top: 6px;
+    padding: 12px 0 4px;
+    border-top: 1px solid rgba(27, 25, 20, 0.1);
+  }
+  .ac-who {
+    display: flex;
+    flex: 1 1 200px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    min-width: 0;
+    margin: 0;
+    color: var(--ink-3);
+    font-size: 15px;
+  }
+  .ac-who b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .ac-mail {
+    overflow: hidden;
+    color: var(--ink-3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ac-act,
+  .ac-edit {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ac-edit {
+    flex: 1 1 100%;
+  }
+  .ac-in {
+    flex: 1 1 160px;
+    min-width: 0;
+    font-size: 16px;
+  }
+  .ac-note {
+    flex: 1 1 100%;
+    margin: 0;
+    color: var(--r-ink);
+    font-size: 14px;
+  }
+  .ac-note:empty {
+    display: none;
+  }
   /* Fixed slot: arming the button never moves the name or the status. */
   .dv-act {
     display: flex;
@@ -2627,6 +2693,125 @@ body vite-error-overlay {
     cursor: progress;
     opacity: 0.7;
   }
+  /* ---- People: next to Devices, same row and same kind of panel ---- */
+  .cn-side {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .cn-side .cn-b.dv-b {
+    margin-left: 0;
+  }
+  .cn-side .cn-b.dv-b:not(:last-child) {
+    margin-right: 0;
+  }
+  .pp-card {
+    width: min(100%, 460px);
+  }
+  .pp-wait {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(27, 25, 20, 0.1);
+  }
+  .pp-until {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-inv {
+    margin-top: 4px;
+    padding: 10px 0 6px;
+    border-top: 1px solid rgba(27, 25, 20, 0.1);
+  }
+  .pp-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .pp-l {
+    color: var(--ink-2);
+    font-size: 15px;
+  }
+  .pp-row {
+    display: flex;
+    gap: 8px;
+  }
+  .pp-in {
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
+    background: var(--cream);
+    font-size: 16px;
+  }
+  .pp-in::placeholder {
+    color: var(--quiet);
+  }
+  .chip.pp-go {
+    flex: none;
+    background: var(--ink);
+    color: var(--cream);
+    cursor: pointer;
+    transition:
+      background 0.25s var(--ease),
+      transform 0.45s var(--spring);
+  }
+  .chip.pp-go:active {
+    transform: scale(0.96);
+  }
+  .chip.pp-go:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+  .chip.pp-go.ok {
+    background: var(--g-ink);
+  }
+  .chip.pp-ghost {
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .chip.pp-ghost:hover {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .pp-new {
+    display: grid;
+    gap: 8px;
+  }
+  .pp-new-h {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: 15px;
+  }
+  .pp-new-h b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  /* The link itself: selectable, wraps anywhere, so a long token never pushes the page sideways. */
+  .pp-url {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 11px;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .pp-new-a {
+    display: flex;
+    gap: 8px;
+  }
+  .pp-once {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: 14px;
+  }
+  .pp-inv .ac-note:not(:empty) {
+    margin-top: 6px;
+  }
   @media (max-width: 440px) {
     /* One row with "Connect your agent": the toggle keeps its icon and count (its label says the rest). */
     .cn-bar {
@@ -2635,6 +2820,19 @@ body vite-error-overlay {
     .dv-b-t {
       display: none;
     }
+    /* Three buttons in one row: the label never wraps, the two toggles get tighter. */
+    .cn-bar {
+      gap: 6px 8px;
+    }
+    .cn-bar .cn-b:not(.dv-b) {
+      flex: 0 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+    }
+    .cn-side .cn-b.dv-b {
+      gap: 5px;
+      padding: 0 7px;
+    }
     .dv-row {
       grid-template-columns: 22px minmax(0, 1fr) auto 44px;
     }
@@ -2642,14 +2840,48 @@ body vite-error-overlay {
       font-size: 0;
       gap: 0;
     }
+    /* An email in the status column must not take the name's room. */
+    .pp-until {
+      max-width: 112px;
+    }
+  }
+  @media (max-width: 370px) {
+    /* The agent logos give way before the label does. */
+    .cn-bar .cn-faces {
+      display: none;
+    }
   }
 
   /* ---- "New Mac": above the form, in the empty top of the screen, so nothing moves ---- */
-  .dv-new {
+  /* Notices stack at the top of the page, out of the flow: the form never moves for them. */
+  .notices {
     position: absolute;
+    z-index: 3;
     top: max(16px, env(safe-area-inset-top));
     left: max(24px, env(safe-area-inset-left));
     right: max(24px, env(safe-area-inset-right));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .notices:empty {
+    display: none;
+  }
+  /* The way in without an agent: one quiet line under the prompt, the command selectable. */
+  .cn-alt {
+    margin: 12px 2px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+  .cn-alt-c {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .dv-new {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -2682,6 +2914,10 @@ body vite-error-overlay {
   }
   .dv-new-a .chip.dv-rm.on {
     background: var(--r-ink);
+  }
+  .dv-new-a .chip.dv-go {
+    background: var(--ink);
+    color: var(--cream);
   }
 }
 /* ==== end network ==== */

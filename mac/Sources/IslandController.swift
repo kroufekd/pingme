@@ -67,6 +67,9 @@ final class IslandController {
     private var knownDue = Set<String>()
     /// Due tasks the owner put away with Esc. A new arrival still opens the island.
     private var dismissed = Set<String>()
+    /// The task card is open because the owner opened it (a click), not because something popped.
+    /// While paused, only then does it show more than red.
+    private var userOpenedTask = false
     private var nagFirst: [String: Date] = [:]
     private var nagLast: [String: Date] = [:]
     private var orangeNagged = Set<String>()
@@ -83,6 +86,12 @@ final class IslandController {
     private var peopleAt = Date.distantPast
     /// Something changed in the store: sync and refresh the menu bar.
     var onChange: (() -> Void)?
+    /// "Try again" on a locked Keychain.
+    var onRetryKey: (() -> Void)?
+    var keyLock: KeyLock? {
+        get { model.keyLock }
+        set { model.keyLock = newValue }
+    }
     /// This Mac is connected to an account. Without it the island offers "Connect this Mac"
     /// in place of people; local tasks and agent sessions work either way.
     var paired = false {
@@ -121,17 +130,23 @@ final class IslandController {
 
     func tick(now: Date = Date()) {
         place()
+        updateReplyDelivery()
         var changed = false
         let due = store.due(at: now)
+        let paused = Prefs.paused(at: now)
+        model.privateText = Prefs.hideText || paused
         let dueIds = Set(due.map(\.id))
-        let fresh = dueIds.subtracting(knownDue)
+        // Paused: only red arrives (with its text hidden); the rest is held and arrives when it ends.
+        let split = Arrivals.split(due.map { Arrivals.Item(id: $0.id, red: $0.level == .red, touched: $0.touchedAt != nil) },
+                                   known: knownDue, dismissed: dismissed, paused: paused)
+        let fresh = split.fresh
         for id in knownDue.subtracting(dueIds) {
             nagFirst[id] = nil
             nagLast[id] = nil
             orangeNagged.remove(id)
             activeSeconds[id] = nil
         }
-        knownDue = dueIds
+        knownDue = split.known
         dismissed.formIntersection(dueIds)
         model.now = now
 
@@ -145,11 +160,13 @@ final class IslandController {
         }
 
         if target == .task {
-            if due.isEmpty { close() } else { pickCurrent(due) }
+            // While paused the island keeps to red, unless the owner opened it to look.
+            let shown = paused && !userOpenedTask ? due.filter { $0.level == .red } : due
+            if shown.isEmpty { close() } else { pickCurrent(shown) }
         }
 
         // Reminders until the owner clicks. Orange once after 2 min, red every minute.
-        for t in due where t.touchedAt == nil {
+        for t in due where t.touchedAt == nil && (!paused || t.level == .red) {
             guard let first = nagFirst[t.id] else { continue }
             if t.level == .orange, !orangeNagged.contains(t.id), now.timeIntervalSince(first) >= 120 {
                 orangeNagged.insert(t.id)
@@ -200,6 +217,25 @@ final class IslandController {
         if model.current?.id != top.id { setCurrent(top) } else if model.current != top { model.current = top }
     }
 
+    /// The reply on the current task: still in the outbox, or taken by the server. The sender sees it on
+    /// their web page or Mac, so an offline sender is said, not hidden behind "Sent".
+    private func updateReplyDelivery() {
+        guard let t = model.current, t.reply != nil, let ref = t.taskRef, !t.isAgentSession else {
+            if !model.replyDelivery.isEmpty { model.replyDelivery = "" }
+            return
+        }
+        let text: String
+        if store.outbox.contains(where: { $0.isReply && $0.auto != true && $0.taskRef == ref }) {
+            text = store.syncError == nil ? "Sending" : "Waiting for the connection"
+        } else if let c = sync.contacts?.contacts.first(where: { $0.userId == t.fromUserId }), c.hasMac, !c.online {
+            // Without a Mac they read it on the web, whenever they look: plain "Sent" says it.
+            text = "Sent, shows when \(Fmt.firstName(c.name))'s Mac is on"
+        } else {
+            text = "Sent"
+        }
+        if model.replyDelivery != text { model.replyDelivery = text }
+    }
+
     private func setCurrent(_ t: TodoTask) {
         model.current = t
         model.replyText = ""
@@ -246,6 +282,7 @@ final class IslandController {
 
     func open(_ requested: IslandMode, user: Bool) {
         let mode: IslandMode = requested == .people && !paired ? .pair : requested
+        if mode == .task { userOpenedTask = user || (userOpenedTask && target == .task) }
         let p = panel ?? makePanel()
         panel = p
         place()
@@ -254,7 +291,8 @@ final class IslandController {
         case .waiting: model.waitingRows = store.waiting()
         case .people: loadPeople()
         case .pair: model.pair = pairing.state
-        case .compose, .closed: break
+        case .compose: refreshPingable()
+        case .closed: break
         }
         if model.shown == .people && mode != .people { forgetKey() }
         if model.shown != mode { model.hoverRow = nil }
@@ -277,7 +315,12 @@ final class IslandController {
             // Start closed, then open a moment later so the growth is animated.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
                 guard let self, self.target == mode else { return }
+                self.model.arriving = true
                 self.model.mode = mode
+                // Long after the ears appeared; a card switch from then on keeps its plain fade.
+                DispatchQueue.main.asyncAfter(deadline: .now() + kIslandSettle) { [weak self] in
+                    self?.model.arriving = false
+                }
             }
         } else {
             model.mode = mode
@@ -291,10 +334,12 @@ final class IslandController {
     /// Folds the island back into the notch.
     func close() {
         guard target != .closed else { return }
+        userOpenedTask = false
         if model.shown == .people { forgetKey() }
         frameGeneration += 1
         let g = frameGeneration
         target = .closed
+        model.arriving = false
         model.mode = .closed
         model.hover = false
         model.taskFocused = false
@@ -311,9 +356,11 @@ final class IslandController {
 
     /// Closing a tool state shows a due task if there is one.
     private func closeTool() {
-        if store.due().contains(where: { !dismissed.contains($0.id) }) {
+        let paused = Prefs.paused()
+        let due = store.due().filter { !paused || $0.level == .red }
+        if due.contains(where: { !dismissed.contains($0.id) }) {
             open(.task, user: false)
-            pickCurrent(store.due())
+            pickCurrent(due)
         } else {
             close()
         }
@@ -361,7 +408,19 @@ final class IslandController {
         toggleContact: { [weak self] id in self?.toggleContact(id) },
         removeContact: { [weak self] id in self?.removeContact(id) },
         pair: { [weak self] in self?.pairing.start() },
-        cancelPair: { [weak self] in self?.pairing.cancel() })
+        cancelPair: { [weak self] in self?.pairing.cancel() },
+        retryKey: { [weak self] in self?.onRetryKey?() },
+        openKeychain: {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.keychainaccess") {
+                NSWorkspace.shared.openApplication(at: url, configuration: .init())
+            }
+        })
+
+    /// The key came back after "Try again": the pair card has nothing left to say.
+    func keyUnlocked() {
+        keyLock = nil
+        if target == .pair { closeTool() }
+    }
 
     private func done(_ id: String) {
         store.markDone(id)
@@ -425,15 +484,79 @@ final class IslandController {
         onChange?()
     }
 
+    /// Contacts for the compose "To" menu: the last list right away, a fresh one when it is old.
+    private func refreshPingable() {
+        if !model.composeBusy { model.composeNote = "" }
+        guard paired else { model.newTo = nil; return }
+        if let c = sync.contacts { model.contacts = ContactRow.list(c) }
+        guard Date().timeIntervalSince(sync.contactsAt) > 120 else { return }
+        Task { @MainActor [weak self] in
+            guard let self, case .success(let c) = await self.sync.loadContacts() else { return }
+            self.model.contacts = ContactRow.list(c)
+            if let to = self.model.newTo, !self.model.contacts.contains(where: { $0.id == to && $0.hasMac }) { self.model.newTo = nil }
+        }
+    }
+
+    /// The compose text goes to a contact's Mac instead of this one. The text stays until it went.
+    private func sendPing(to userId: String, text: String, due: Date?) {
+        guard !model.composeBusy else { return }
+        let first = Fmt.firstName(model.contacts.first { $0.id == userId }?.name ?? "them")
+        model.composeBusy = true
+        model.composeNote = "Sending to \(first)..."
+        let urgency = model.newUrgency
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let r = await self.sync.ping(to: userId, text: text, urgency: urgency, dueAt: due)
+            self.model.composeBusy = false
+            switch r {
+            case .success(let sent):
+                // Watched from when it shows on their Mac, so a ping for next week still gets its reply.
+                ReplyWatch.add(sent.ref, at: max(Date().ms, due?.ms ?? 0))
+                let online = sent.target.online
+                let scheduled = (due?.timeIntervalSinceNow ?? 0) > 30
+                self.model.composeNote = scheduled ? "Sent. \(first) sees it at the time you picked."
+                    : online ? "Sent to \(first)." : "Sent. \(first) sees it when their Mac is back."
+                self.model.newTitle = ""
+                self.model.newUrgency = .green
+                self.model.later = false
+                // The next new thing is a note to self again, unless they pick someone.
+                self.model.newTo = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+                    guard let self, self.target == .compose, self.model.newTitle.isEmpty, !self.model.composeBusy else { return }
+                    self.model.composeNote = ""
+                    self.closeTool()
+                }
+            case .failure(let f):
+                self.model.composeNote = Self.pingProblem(f, name: first)
+            }
+        }
+    }
+
+    static func pingProblem(_ f: MCPTools.SendFailure, name: String) -> String {
+        switch f {
+        case .noMac: return "\(name) has no Mac app yet, so the ping cannot reach them."
+        case .rateLimited: return "That is 30 pings to \(name) this hour. Try again later."
+        case .notContact: return "\(name) is not your contact any more."
+        case .unstable: return "\(name)'s Macs keep changing. Try again in a minute."
+        case .seal: return "Could not encrypt it. Nothing was sent."
+        case .api(.offline): return "No connection. Nothing was sent; try again."
+        case .api(.unauthorized): return "This Mac is not connected any more. Connect it again."
+        case .api(.server): return "The server refused it. Nothing was sent."
+        }
+    }
+
     private func add() {
         let title = model.newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
+        if let to = model.newTo {
+            sendPing(to: to, text: title, due: model.later ? model.laterDate : nil)
+            return
+        }
         let due = model.later ? model.laterDate : Date()
-        store.add(title: title, dueAt: due, urgency: model.newUrgency, repeat: model.later ? model.laterRepeat : nil)
+        store.add(title: title, dueAt: due, urgency: model.newUrgency)
         model.newTitle = ""
         model.newUrgency = .green
         model.later = false
-        model.laterRepeat = ""
         onChange?()
         closeTool()
         tick()
@@ -726,9 +849,17 @@ final class IslandController {
         // Clicks and keys on the island: Esc closes it, any click counts as "seen it" and stops reminders.
         if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] e in
             let isEscape = e.type == .keyDown && e.keyCode == 53
+            let movesFocus = e.type == .keyDown && InputMode.movesFocus(e.keyCode)
+            let isClick = e.type != .keyDown
             let window = e.window
             let swallow = MainActor.assumeIsolated { () -> Bool in
                 guard let self, let p = self.panel, window === p else { return false }
+                // Focus rings show after Tab or arrows, and go away with the next click.
+                if movesFocus {
+                    InputMode.shared.keyboard = true
+                } else if isClick, InputMode.shared.keyboard {
+                    InputMode.shared.keyboard = false
+                }
                 if isEscape {
                     self.handleEscape()
                     return true
@@ -745,7 +876,9 @@ final class IslandController {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                // Pairing keeps polling while the island is folded; the owner is in the browser now.
+                // A waiting pairing stays open: the owner is clicking in the browser and needs the code
+                // in sight. Escape or Cancel still put it away.
+                if self.target == .pair, self.pairing.busy { return }
                 if [.compose, .waiting, .people, .pair].contains(self.target) { self.closeTool() }
             }
         }) { monitors.append(m) }

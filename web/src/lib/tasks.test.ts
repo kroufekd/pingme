@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { kindOf, spokenFor, wordFor } from './tasks'
+import { autoNote, kindOf, spokenFor, wordFor } from './tasks'
 import { dueLabel, snoozeLabel } from './time'
 
 // Monday 16 Nov 2026, 14:02 local time.
@@ -47,5 +47,15 @@ describe('time labels', () => {
   it('formats snoozes', () => {
     expect(snoozeLabel(undefined, NOW)).toBe('snoozed')
     expect(snoozeLabel(NOW + 30_000, NOW)).toBe('in 1 min')
+  })
+})
+
+describe('automatic note from their Mac', () => {
+  it('is the note, without its marker, only on a ping for an agent', () => {
+    expect(autoNote(true, '[auto] Got it, passed on to Jakub.')).toBe('Got it, passed on to Jakub.')
+    expect(autoNote(false, '[auto] Got it')).toBeUndefined()
+    expect(autoNote(true, 'Jo, na mate.macaly.com')).toBeUndefined()
+    expect(autoNote(true, undefined)).toBeUndefined()
+    expect(autoNote(true, '[auto]  ')).toBeUndefined()
   })
 })
