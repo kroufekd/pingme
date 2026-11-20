@@ -7,6 +7,7 @@ import { isOnline, openRow, sendSealed } from '@/lib/network'
 import type { ContactsView, MineView, SentRow } from '@/lib/network'
 import { newRef } from '@/lib/seal'
 import type { Kind } from '@/lib/seal'
+import { autoNote } from '@/lib/tasks'
 import type { Row } from '@/lib/tasks'
 import { REPLIES, isLeaving, setLeaving } from '@/lib/forget'
 import { vaultGet, vaultSet } from '@/lib/vault'
@@ -200,6 +201,13 @@ export function useSent({
       reply = kept[r.ref]
       replyMissing = reply === undefined
     }
+    // Their Mac's automatic note is not their reply: no badge, no notification, no "reply" status.
+    const note = autoNote(r.forAgent, reply)
+    if (note !== undefined) {
+      replyTexts.current.delete(r.ref)
+      reply = undefined
+      replyPending = false
+    }
     return {
       taskRef: r.ref,
       title: mineText ?? (typeof t === 'string' ? t : null),
@@ -210,14 +218,15 @@ export function useSent({
       offline: r.status === 'queued' && offline(r.toUserId),
       undelivered: r.undelivered === true,
       dueAt: planned(r.dueAt, r.createdAt),
-      status: r.status,
+      status: note !== undefined && r.status === 'replied' ? 'waiting' : r.status,
       statusAt: r.statusAt,
       snoozedUntil: r.snoozedUntil ?? undefined,
       typingUntil: r.typingUntil ?? undefined,
       reply,
       replyMissing,
-      replyAt: r.replyAt ?? undefined,
+      replyAt: note === undefined ? (r.replyAt ?? undefined) : undefined,
       replyPending,
+      note,
       createdAt: r.createdAt,
     }
   }

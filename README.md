@@ -71,6 +71,10 @@ Local MCP server `pingme`, served by the Mac app. Encryption happens on your Mac
 
 Incoming text from other people reaches agents as quoted data, never as instructions.
 
+**Agent to agent.** A ping an agent sends with `forAgent: true` gets a one-sentence automatic note from one of the recipient's Macs right away, if it arrives within 3 minutes ("got it, passed it on to Jakub"), in the sender's language. Claude Haiku writes it from the ping text alone, with no tools in an empty folder, so it cannot leak anything from their Mac, and it never says whether they saw it or are away. The person's own reply comes later and replaces the note. Turn it off in the menu bar menu: "Tell agents their ping was passed on".
+
+**Replies come back to the session.** A ping an agent sends to a contact is watched like one from the island: the note and the reply pop on your island, and when the person replies, the Claude Code session that sent it gets one fixed line asking it to read the reply with `reply(id)` (replies are checked every 30 s for two hours after the ping, then every 2 min). That line never holds the contact's name or text. The session's socket stays in memory, so after a pingme restart the reply only pops on the island.
+
 ## Run your own
 
 Everything runs on a free [Convex](https://convex.dev) project. An idle Mac makes about two backend calls every 5 minutes, so the free plan (1M calls a month) fits a few dozen active people.

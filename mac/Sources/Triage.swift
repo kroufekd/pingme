@@ -1,6 +1,7 @@
 // Messages for the agent. Before one shows on the island, Claude Haiku reads it on this Mac:
 // read-only, locked to ~/git projects (--restricted: no commands, no web, no MCP, no user settings),
-// and writes a short report. Only Dominik sees the report; the sender gets the usual statuses.
+// and writes a short report. Only Dominik sees the report; the sender gets the usual statuses and a
+// separate automatic "passed it on" note (`AutoAck`) that never sees the report or the projects.
 
 import Foundation
 

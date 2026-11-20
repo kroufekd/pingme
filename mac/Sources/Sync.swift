@@ -147,6 +147,8 @@ final class SyncEngine {
     private func sendReply(_ e: StatusEvent, token: String) async -> Net.Outcome {
         let text = Net.cap(e.reply ?? "")
         guard !text.isEmpty else { return .drop }
+        // The owner replied (or is about to) since the automatic note was queued: it would replace their answer.
+        if e.auto == true, store.ackStale(e.taskRef) { return .drop }
         if Net.sendsPlain(e) {
             guard let r = try? await api.reply(token: token, ref: e.taskRef, at: e.at, envelopes: nil, text: text) else {
                 return .retryLater

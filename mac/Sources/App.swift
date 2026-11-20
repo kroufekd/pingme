@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var island: IslandController!
     private var bridge: AgentBridge!
     private var triage: Triage!
+    private var acker: AutoAcker!
+    private let agentReplies = AgentReplies()
     private var statusItem: NSStatusItem!
     private var tickTimer: Timer?
     /// The contact list is checked this often for people who joined or connected a Mac.
@@ -44,6 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bridge.onRecap = { [weak self] in self?.tick() }
         triage = Triage(dataDir: TaskStore.dataDir())
         triage.onFinish = { [weak self] in self?.tick() }
+        acker = AutoAcker(dataDir: TaskStore.dataDir())
+        acker.onFinish = { [weak self] in
+            self?.sync.syncNow()
+            self?.tick()
+        }
         island = IslandController(store: store, sync: sync, presence: presence, bridge: bridge, pairing: pairing)
         island.onChange = { [weak self] in
             self?.sync.noteLocalChange()
@@ -108,13 +115,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !news.isEmpty { tick() }
     }
 
-    /// Replies to pings sent from the island: asked by id, only while some still wait for one.
+    /// Replies to pings sent from the island or by an agent here: asked by id, only while some still
+    /// wait for one. A person's reply to an agent's ping also tells that session to read it.
     private func checkReplies() async {
         let watch = ReplyWatch.load()
         guard !watch.isEmpty, case .success(let rows) = await sync.sent(refs: Array(watch.keys)) else { return }
-        let r = ReplyWatch.step(rows, watch: ReplyWatch.load(), now: Date().ms, open: sync.openReply)
+        let r = ReplyWatch.step(rows, watch: ReplyWatch.load(), shown: ReplyWatch.loadShown(), now: Date().ms,
+                                open: sync.openReply)
         ReplyWatch.save(r.watch)
-        for n in r.news { store.notice(id: "reply-\(n.ref)", title: n.text, from: "\(Fmt.firstName(n.name)) replied") }
+        ReplyWatch.saveShown(r.shown)
+        for n in r.news {
+            let first = Fmt.firstName(n.name)
+            if n.auto {
+                store.notice(id: "ack-\(n.ref)", title: n.text, from: "\(first)'s agent")
+            } else {
+                store.notice(id: "reply-\(n.ref)", title: n.text, from: "\(first) replied")
+                agentReplies.wake(n.ref)
+            }
+        }
+        agentReplies.keep(only: Set(r.watch.keys))
         if !r.news.isEmpty { tick() }
     }
 
@@ -166,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         try? IdentityStore.delete()
         ContactNews.forget()
         ReplyWatch.forget()
+        agentReplies.forget()
         island.paired = false
         store.syncError = nil
         updateStatusItem()
@@ -188,12 +208,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             contactsCheckedAt = Date()
             Task { _ = await sync.loadContacts() }
         }
-        if sync.paired, !presence.quiet(at: Date()), Date().timeIntervalSince(repliesCheckedAt) > 120 {
+        agentReplies.scan()
+        // An agent waiting on a reply hears it within half a minute; island pings can wait two.
+        if sync.paired, !presence.quiet(at: Date()),
+           Date().timeIntervalSince(repliesCheckedAt) > (agentReplies.waiting() ? 30 : 120) {
             repliesCheckedAt = Date()
             Task { await checkReplies() }
         }
         _ = bridge.scan(into: store)
         triage.pump(store)
+        acker.pump(store, owner: sync.identity?.name ?? sync.contacts?.me.name,
+                   here: AutoAck.writesHere(me: sync.identity?.deviceId, devices: sync.contacts?.me.devices))
         island.tick()
         updateStatusItem()
     }
@@ -287,6 +312,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let hide = item("Hide ping text until I point at it", #selector(toggleHide), key: "")
         hide.state = Prefs.hideText ? .on : .off
         menu.addItem(hide)
+        let ack = item("Tell agents their ping was passed on", #selector(toggleAutoAck), key: "")
+        ack.state = Prefs.autoAck ? .on : .off
+        menu.addItem(ack)
         menu.addItem(.separator())
         if sync.paired { menu.addItem(item("Disconnect this Mac", #selector(unpair), key: "")) }
         menu.addItem(item("Quit pingme", #selector(quit), key: "q"))
@@ -344,6 +372,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Prefs.hideText.toggle()
         tick()
     }
+
+    @objc private func toggleAutoAck() { Prefs.autoAck.toggle() }
 
     @objc private func quit() { NSApp.terminate(nil) }
 

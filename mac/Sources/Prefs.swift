@@ -30,6 +30,14 @@ enum Prefs {
         set { UserDefaults.standard.set(newValue, forKey: hideKey) }
     }
 
+    private static let noAckKey = "pingme.noAutoAck"
+
+    /// A ping for the agent gets a short automatic "passed it on" reply (`AutoAck`). On unless turned off.
+    static var autoAck: Bool {
+        get { !UserDefaults.standard.bool(forKey: noAckKey) }
+        set { UserDefaults.standard.set(!newValue, forKey: noAckKey) }
+    }
+
     /// 8:00 tomorrow, local time.
     static func tomorrowMorning(after now: Date = Date()) -> Date {
         let cal = Calendar.current

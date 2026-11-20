@@ -110,6 +110,13 @@ function Item({ row, reply, now, isNew, index, showWho }: { row: Row; reply: str
           </p>
         )}
         {kind === 'lost' && <p className="it-lost">{NOT_DELIVERED}</p>}
+        {row.note && !reply && (
+          <p className="it-r">
+            <Icon name="robot" size={14} />
+            <span className="vh">Automatic note: </span>
+            <span>{row.note}</span>
+          </p>
+        )}
         {(reply || row.replyMissing) && (
           <p className={reply ? 'it-r' : 'it-r it-miss'}>
             <Icon name="reply" size={14} />

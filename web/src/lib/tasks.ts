@@ -31,7 +31,18 @@ export type Row = {
   replyAt?: number
   /** A reply this device has not marked as shown yet. */
   replyPending: boolean
+  /** The automatic "passed it on" note from their Mac, while their own reply has not come. */
+  note?: string
   createdAt: number
+}
+
+/** Starts the automatic note a recipient's Mac sends for a ping to their agent (AutoAck on the Mac). */
+export const AUTO_NOTE = '[auto] '
+
+/** The note without its marker, when a reply to a ping for an agent is that note. Not a reply then. */
+export function autoNote(forAgent: boolean, reply: string | undefined): string | undefined {
+  if (!forAgent || reply === undefined || !reply.startsWith(AUTO_NOTE)) return undefined
+  return reply.slice(AUTO_NOTE.length).trim() || undefined
 }
 
 export type Me =

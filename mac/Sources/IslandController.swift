@@ -225,7 +225,7 @@ final class IslandController {
             return
         }
         let text: String
-        if store.outbox.contains(where: { $0.isReply && $0.taskRef == ref }) {
+        if store.outbox.contains(where: { $0.isReply && $0.auto != true && $0.taskRef == ref }) {
             text = store.syncError == nil ? "Sending" : "Waiting for the connection"
         } else if let c = sync.contacts?.contacts.first(where: { $0.userId == t.fromUserId }), c.hasMac, !c.online {
             // Without a Mac they read it on the web, whenever they look: plain "Sent" says it.

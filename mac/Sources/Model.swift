@@ -97,6 +97,8 @@ struct TodoTask: Codable, Identifiable, Equatable {
     var report: String? = nil
     /// running, done or failed.
     var triage: String? = nil
+    /// The automatic reply to a sender's agent (`AutoAck`): pending, sent or skipped. Nil: none is due.
+    var ack: String? = nil
     // Network. The ping's sender and recipient, as the AAD of its reply needs them.
     var fromUserId: String? = nil
     var toUserId: String? = nil
@@ -116,6 +118,7 @@ struct TodoTask: Codable, Identifiable, Equatable {
     var isAgentSession: Bool { source == "agent" }
     var forAgent: Bool { to == "agent" }
     var triaging: Bool { triage == "running" }
+    var ackPending: Bool { ack == "pending" }
     func isSnoozed(at now: Date) -> Bool { (snoozedUntil ?? 0) > now.ms }
 
     /// Who the task is from, as the island shows it.
@@ -161,6 +164,8 @@ struct StatusEvent: Codable, Equatable {
     var from: String? = nil
     var to: String? = nil
     var plain: Bool? = nil
+    /// The automatic reply to a ping for the agent, not one the owner wrote.
+    var auto: Bool? = nil
 
     var isReply: Bool { status == "replied" }
 
@@ -322,11 +327,31 @@ final class TaskStore: ObservableObject {
         return lastAt
     }
 
-    private func emit(_ t: TodoTask, _ status: String, snoozedUntil: Double? = nil, reply: String? = nil) {
+    private func emit(_ t: TodoTask, _ status: String, snoozedUntil: Double? = nil, reply: String? = nil, auto: Bool = false) {
         guard let ref = t.taskRef else { return }
         outbox.append(StatusEvent(uid: UUID().uuidString, taskRef: ref, status: status, at: stamp(),
                                   snoozedUntil: snoozedUntil, reply: reply, from: t.fromUserId, to: t.toUserId,
-                                  plain: t.plain))
+                                  plain: t.plain, auto: auto ? true : nil))
+    }
+
+    /// The automatic reply for a ping to the agent (nil text: none, it is off). It goes to the sender like
+    /// a reply, but the task stays unanswered here. Not once the owner replied: on the server a later
+    /// reply replaces the earlier one, so a late note must never land on top of the owner's answer.
+    func queueAck(_ id: String, text: String?) {
+        guard let t = task(id), t.ackPending else { return }
+        let send = text != nil && !ackStale(t.taskRef)
+        _ = update(id) { $0.ack = send ? "sent" : "skipped" }
+        if send { emit(t, "replied", reply: text, auto: true) }
+        commit()
+    }
+
+    /// True when an automatic reply for this ping must not go (any more): the owner replied, is about
+    /// to, or the ping is done.
+    func ackStale(_ ref: String?) -> Bool {
+        guard let ref else { return true }
+        if outbox.contains(where: { $0.isReply && $0.auto != true && $0.taskRef == ref }) { return true }
+        guard let t = pending.first(where: { $0.taskRef == ref }) else { return true }
+        return t.reply != nil
     }
 
     private func update(_ id: String, _ change: (inout TodoTask) -> Void) -> TodoTask? {
@@ -456,6 +481,7 @@ final class TaskStore: ObservableObject {
                 to: p.forAgent ? "agent" : nil,
                 // Nothing to triage in a placeholder.
                 triage: p.forAgent && !p.unreadable ? "running" : nil,
+                ack: AutoAck.due(p, now: Date().ms) ? "pending" : nil,
                 fromUserId: p.fromUserId, toUserId: p.toUserId, fromAgent: p.fromAgent,
                 plain: p.plain ? true : nil, unreadable: p.unreadable ? true : nil))
         }

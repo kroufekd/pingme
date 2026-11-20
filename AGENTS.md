@@ -18,7 +18,7 @@ The MCP server `pingme` is registered (for Claude Code, Codex and Cursor, whiche
 - `contacts` - list contacts
 - `ping(to, text, urgency, forAgent?)` - send a ping
 - `status(id)` - delivery and read state of a ping
-- `reply(id)` - read the reply to a ping
+- `reply(id)` - read the reply to a ping. With `forAgent: true` the first reply may be an automatic note from their Mac that it passed the ping on; their own reply replaces it. In Claude Code, the ping's result says when pingme will send your session a short line once the person replies; do not poll.
 
 ## Rules
 
